@@ -100,7 +100,16 @@ class Database {
     if (!this.cache.data[serverId]) this.cache.data[serverId] = {};
     if (!this.cache.data[serverId][userId]) this.cache.data[serverId][userId] = {};
     
+    // 기존 sheetThread 보존
+    const existingSheetThread = this.cache.data[serverId][userId]?.[characterName]?.sheetThread;
+    
     this.cache.data[serverId][userId][characterName] = data;
+    
+    // sheetThread 복원
+    if (existingSheetThread) {
+      this.cache.data[serverId][userId][characterName].sheetThread = existingSheetThread;
+    }
+    
     this.save(this.files.data, this.cache.data);
   }
 
@@ -353,18 +362,31 @@ class Database {
    * @param {string} messageId - 메시지 ID
    */
   setCharacterSheetThread(serverId, userId, characterName, threadId, messageId) {
+    console.log(`🔍 [DB] setCharacterSheetThread 호출됨`);
+    console.log(`   - serverId: ${serverId}`);
+    console.log(`   - userId: ${userId}`);
+    console.log(`   - characterName: ${characterName}`);
+    console.log(`   - threadId: ${threadId}`);
+    console.log(`   - messageId: ${messageId}`);
+    
     if (!this.cache.data[serverId]) this.cache.data[serverId] = {};
     if (!this.cache.data[serverId][userId]) this.cache.data[serverId][userId] = {};
     if (!this.cache.data[serverId][userId][characterName]) {
       this.cache.data[serverId][userId][characterName] = {};
     }
     
-    this.cache.data[serverId][userId][characterName].__sheetThread = {
+    console.log(`🔍 [DB] 저장 전 캐릭터 데이터:`, Object.keys(this.cache.data[serverId][userId][characterName]));
+    
+    this.cache.data[serverId][userId][characterName].sheetThread = {
       threadId,
       messageId
     };
     
+    console.log(`🔍 [DB] 저장 후 sheetThread:`, this.cache.data[serverId][userId][characterName].sheetThread);
+    console.log(`🔍 [DB] 저장 후 캐릭터 데이터:`, Object.keys(this.cache.data[serverId][userId][characterName]));
+    
     this.save(this.files.data, this.cache.data);
+    console.log(`✅ [DB] save() 호출 완료`);
   }
 
   /**
@@ -375,7 +397,19 @@ class Database {
    * @returns {Object|null} - { threadId, messageId }
    */
   getCharacterSheetThread(serverId, userId, characterName) {
-    return this.cache.data[serverId]?.[userId]?.[characterName]?.__sheetThread || null;
+    console.log(`🔍 [DB] getCharacterSheetThread 호출됨`);
+    console.log(`   - serverId: ${serverId}`);
+    console.log(`   - userId: ${userId}`);
+    console.log(`   - characterName: ${characterName}`);
+    
+    const result = this.cache.data[serverId]?.[userId]?.[characterName]?.sheetThread || null;
+    console.log(`🔍 [DB] 조회 결과:`, result);
+    
+    if (!result && this.cache.data[serverId]?.[userId]?.[characterName]) {
+      console.log(`🔍 [DB] 캐릭터 데이터 내용:`, Object.keys(this.cache.data[serverId][userId][characterName]));
+    }
+    
+    return result;
   }
 
   /**

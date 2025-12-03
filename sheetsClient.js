@@ -490,9 +490,8 @@ class SheetsClient {
         const name = getCell(`${nameCol}${row}`);
         const titus = getCell(`${titusCol}${row}`);
         
-        // D로이스이거나 타이터스인 경우 제외
+        // D로이스는 제외
         if (type && type.includes('D로이스')) continue;
-        if (titus && (titus === 'TRUE' || titus === 'T' || titus === 't' || titus === '○' || titus === 'O')) continue;
         
         // 이름이 있는 로이스만 추가
         if (name && name.trim()) {
@@ -513,11 +512,15 @@ class SheetsClient {
             ? `**【N: ${negative}】**`
             : `N: ${negative}`;
           
+          // 타이터스 체크 확인
+          const isTitus = titus && (titus === 'TRUE' || titus === 'T' || titus === 't' || titus === '○' || titus === 'O');
+          
           loisList.push({
             name: name.trim(),
             pEmotion: formattedP || '',
             nEmotion: formattedN || '',
-            description: desc || ''
+            description: desc || '',
+            isTitus: isTitus  // 타이터스 플래그 추가
           });
         }
       }

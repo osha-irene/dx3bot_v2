@@ -16,15 +16,12 @@ class CommandHandler {
     this.sheets = sheetsClient;
     this.client = client;
 
-// 명령어 모듈 초기화
-console.log('🔍 [DEBUG] CommandHandler 초기화 중...');
-this.sheetCmd = new SheetCommands(database, sheetsClient);
-this.charCmd = new CharacterCommands(database, sheetsClient);
-console.log('✅ [DEBUG] charCmd 생성 완료:', typeof this.charCmd);
-console.log('✅ [DEBUG] charCmd.statusPanel:', typeof this.charCmd.statusPanel);
-this.combatCmd = new CombatCommands(database, sheetsClient);
-this.loisCmd = new LoisCommands(database, sheetsClient);
-this.adminCmd = new AdminCommands(database, client);
+    // 명령어 모듈 초기화
+    this.sheetCmd = new SheetCommands(database, sheetsClient);
+    this.charCmd = new CharacterCommands(database, sheetsClient);
+    this.combatCmd = new CombatCommands(database, sheetsClient, this.charCmd); // charCmd 전달
+    this.loisCmd = new LoisCommands(database, sheetsClient, this.charCmd); // charCmd 전달
+    this.adminCmd = new AdminCommands(database, client);
   }
 
   /**

@@ -22,6 +22,11 @@ class CharacterCommands {
       try {
         const data = await this.sheets.readFullCharacter(sheetInfo.spreadsheetId, sheetInfo.sheetName);
         if (data && data.characterName) {
+          // 🔥 DB에 저장된 emoji 보존
+          const dbData = this.db.getCharacter(serverId, userId, data.characterName);
+          if (dbData && dbData.emoji) {
+            data.emoji = dbData.emoji;
+          }
           return { name: data.characterName, data, fromSheet: true, spreadsheetId: sheetInfo.spreadsheetId, sheetName: sheetInfo.sheetName, serverId, userId };
         }
       } catch (error) {
@@ -97,12 +102,17 @@ class CharacterCommands {
   }
 
   async checkSheet(message) {
+    console.log(`\n🔍 [CHECK] ===== 시트확인 시작 =====`);
     const activeChar = await this.getActiveCharacterData(message);
     if (!activeChar) return message.reply(formatError('활성화된 캐릭터가 없습니다.'));
     
     const serverId = message.guild.id;
     const userId = message.author.id;
     const characterName = activeChar.name;
+    
+    console.log(`🔍 [CHECK] Server ID: ${serverId}`);
+    console.log(`🔍 [CHECK] User ID: ${userId}`);
+    console.log(`🔍 [CHECK] Character Name: ${characterName}`);
     
     let forumChannelId = this.db.getSheetForumChannel(serverId);
     let forumChannel = null;
@@ -121,12 +131,14 @@ class CharacterCommands {
       if (existingForum) {
         forumChannel = existingForum;
         this.db.setSheetForumChannel(serverId, existingForum.id);
+        console.log(`✅ [CHECK] 기존 포럼 채널 찾음: ${existingForum.name}`);
       } else {
         try {
           forumChannel = await message.guild.channels.create({ name: '캐릭터-시트', type: 15, topic: '캐릭터 시트 자동 관리' });
           this.db.setSheetForumChannel(serverId, forumChannel.id);
+          console.log(`✅ [CHECK] 새 포럼 채널 생성: ${forumChannel.name}`);
         } catch (error) {
-          console.error('포럼 생성 오류:', error);
+          console.error('❌ [CHECK] 포럼 생성 오류:', error);
           return await this.checkSheetNormal(message, activeChar);
         }
       }
@@ -135,8 +147,11 @@ class CharacterCommands {
     const sheetContent = this.generateSheetContent(activeChar);
     const threadInfo = this.db.getCharacterSheetThread(serverId, userId, characterName);
     
+    console.log(`🔍 [CHECK] 기존 스레드 정보:`, threadInfo);
+    
     try {
       if (threadInfo && threadInfo.threadId) {
+        console.log(`🔍 [CHECK] 기존 스레드 업데이트 시도...`);
         try {
           const thread = await forumChannel.threads.fetch(threadInfo.threadId);
           if (thread) {
@@ -145,24 +160,49 @@ class CharacterCommands {
             await message.delete().catch(() => {});
             const confirmMsg = await message.channel.send(`${activeChar.data.emoji || '📋'} **${characterName}** 시트 업데이트!\n📍 <#${thread.id}>`);
             setTimeout(() => confirmMsg.delete().catch(() => {}), 5000);
+            console.log(`✅ [CHECK] 기존 스레드 업데이트 완료`);
+            console.log(`🔍 [CHECK] ===== 시트확인 끝 =====\n`);
             return;
           }
-        } catch (error) {}
+        } catch (error) {
+          console.log(`⚠️ [CHECK] 기존 스레드 없음, 새로 생성`);
+        }
       }
       
+      console.log(`🔍 [CHECK] 새 스레드 생성 중...`);
       const emoji = activeChar.data.emoji || '📋';
       const codeName = activeChar.data.codeName || '';
       const threadName = `${emoji} ${characterName} ${codeName ? `「${codeName}」` : ''}`;
       
+      console.log(`🔍 [CHECK] 스레드 이름: ${threadName}`);
       const thread = await forumChannel.threads.create({ name: threadName.substring(0, 100), message: { content: sheetContent } });
+      console.log(`✅ [CHECK] 스레드 생성 완료: ${thread.id}`);
+      
       const messages = await thread.messages.fetch({ limit: 1 });
       const firstMessage = messages.first();
+      console.log(`✅ [CHECK] 첫 메시지 ID: ${firstMessage.id}`);
+      
+      console.log(`🔍 [CHECK] DB에 저장 중...`);
+      console.log(`   - serverId: ${serverId}`);
+      console.log(`   - userId: ${userId}`);
+      console.log(`   - characterName: ${characterName}`);
+      console.log(`   - threadId: ${thread.id}`);
+      console.log(`   - messageId: ${firstMessage.id}`);
+      
       this.db.setCharacterSheetThread(serverId, userId, characterName, thread.id, firstMessage.id);
+      console.log(`✅ [CHECK] DB 저장 완료!`);
+      
+      // 저장 확인
+      const saved = this.db.getCharacterSheetThread(serverId, userId, characterName);
+      console.log(`🔍 [CHECK] DB 저장 확인:`, saved);
+      
       await message.delete().catch(() => {});
       const confirmMsg = await message.channel.send(`${emoji} **${characterName}** 시트 스레드 생성!\n📍 <#${thread.id}>`);
       setTimeout(() => confirmMsg.delete().catch(() => {}), 5000);
+      console.log(`🔍 [CHECK] ===== 시트확인 끝 =====\n`);
     } catch (error) {
-      console.error('포럼 스레드 오류:', error);
+      console.error('❌ [CHECK] 포럼 스레드 오류:', error);
+      console.log(`🔍 [CHECK] ===== 시트확인 끝 (오류) =====\n`);
       return await this.checkSheetNormal(message, activeChar);
     }
   }
@@ -216,7 +256,14 @@ class CharacterCommands {
     
     if (d.lois && d.lois.length > 0) {
       r += `\n${emoji}  **로이스**\n`;
-      for (let l of d.lois) r += `> ㆍ **${l.name}** | ${l.pEmotion} / ${l.nEmotion} | ${l.description}\n`;
+      for (let l of d.lois) {
+        if (l.isTitus) {
+          // 타이터스: 옅은 색 + 취소선
+          r += `-# > ㆍ ~~**${l.name}**~~ | ~~${l.pEmotion}~~ / ~~${l.nEmotion}~~ | ~~${l.description}~~\n`;
+        } else {
+          r += `> ㆍ **${l.name}** | ${l.pEmotion} / ${l.nEmotion} | ${l.description}\n`;
+        }
+      }
     }
     
     if (d.memory && d.memory.length > 0) {
@@ -227,58 +274,58 @@ class CharacterCommands {
     if (d.weapons && d.weapons.length > 0) {
       r += `\n${emoji}  **무기**\n`;
       for (let w of d.weapons) {
-        let wi = `> ㆍ **${w.name}**`;
-        if (w.type) wi += ` (${w.type})`;
-        if (w.ability) wi += ` | 기능: ${w.ability}`;
-        if (w.range) wi += ` | 사정거리: ${w.range}`;
-        if (w.accuracy) wi += ` | 명중: ${w.accuracy}`;
-        if (w.attack) wi += ` | 공격력: ${w.attack}`;
-        if (w.guard) wi += ` | 가드: ${w.guard}`;
-        wi += '\n';
-        if (w.description) wi += `>   ${w.description}\n`;
-        r += wi;
+        r += `> ㆍ **${w.name}**\n`;
+        let details = `> 　　`;
+        if (w.type) details += `${w.type}`;
+        if (w.ability) details += ` | ${w.ability}`;
+        if (w.range) details += ` | ${w.range}`;
+        if (w.accuracy) details += ` | 명중 ${w.accuracy}`;
+        if (w.attack) details += ` | 공격력 ${w.attack}`;
+        if (w.guard) details += ` | 가드 ${w.guard}`;
+        r += `-# ${details}\n`;
+        if (w.description) r += `-# > 　${w.description}\n`;
       }
     }
     
     if (d.armor && d.armor.length > 0) {
       r += `\n${emoji}  **방어구**\n`;
       for (let a of d.armor) {
-        let ai = `> ㆍ **${a.name}**`;
-        if (a.type) ai += ` (${a.type})`;
-        if (a.dodge) ai += ` | 닷지: ${a.dodge}`;
-        if (a.action) ai += ` | 행동치: ${a.action}`;
-        if (a.defense) ai += ` | 장갑: ${a.defense}`;
-        ai += '\n';
-        if (a.description) ai += `>   ${a.description}\n`;
-        r += ai;
+        r += `> ㆍ **${a.name}**\n`;
+        let details = `> 　　`;
+        if (a.type) details += `${a.type}`;
+        if (a.dodge) details += ` | 닷지 ${a.dodge}`;
+        if (a.action) details += ` | 행동치 ${a.action}`;
+        if (a.defense) details += ` | 장갑 ${a.defense}`;
+        r += `-# ${details}\n`;
+        if (a.description) r += `-# > 　${a.description}\n`;
       }
     }
     
     if (d.vehicles && d.vehicles.length > 0) {
       r += `\n${emoji}  **비클**\n`;
       for (let v of d.vehicles) {
-        let vi = `> ㆍ **${v.name}**`;
-        if (v.type) vi += ` (${v.type})`;
-        if (v.ability) vi += ` | 기능: ${v.ability}`;
-        if (v.attack) vi += ` | 공격력: ${v.attack}`;
-        if (v.action) vi += ` | 행동치: ${v.action}`;
-        if (v.defense) vi += ` | 장갑: ${v.defense}`;
-        if (v.move) vi += ` | 이동: ${v.move}`;
-        vi += '\n';
-        if (v.description) vi += `>   ${v.description}\n`;
-        r += vi;
+        r += `> ㆍ **${v.name}**\n`;
+        let details = `> 　　`;
+        if (v.type) details += `${v.type}`;
+        if (v.ability) details += ` | ${v.ability}`;
+        if (v.attack) details += ` | 공격력 ${v.attack}`;
+        if (v.action) details += ` | 행동치 ${v.action}`;
+        if (v.defense) details += ` | 장갑 ${v.defense}`;
+        if (v.move) details += ` | 이동 ${v.move}`;
+        r += `-# ${details}\n`;
+        if (v.description) r += `-# > 　${v.description}\n`;
       }
     }
     
     if (d.items && d.items.length > 0) {
       r += `\n${emoji}  **아이템**\n`;
       for (let i of d.items) {
-        let ii = `> ㆍ **${i.name}**`;
-        if (i.type) ii += ` (${i.type})`;
-        if (i.ability) ii += ` | 기능: ${i.ability}`;
-        ii += '\n';
-        if (i.description) ii += `>   ${i.description}\n`;
-        r += ii;
+        r += `> ㆍ **${i.name}**\n`;
+        let details = `> 　　`;
+        if (i.type) details += `${i.type}`;
+        if (i.ability) details += ` | ${i.ability}`;
+        r += `-# ${details}\n`;
+        if (i.description) r += `-# > 　${i.description}\n`;
       }
     }
     
@@ -406,36 +453,131 @@ class CharacterCommands {
     d.dloisDesc = desc;
     this.db.setCharacter(serverId, userId, active, d);
     
-    let r = formatSuccess(`**${active}**의 D로이스가 설정되었습니다!`) + '\n> **${full}**\n';
+    // 시트 자동 업데이트
+    let sheetUpdated = false;
+    const sheetInfo = this.db.getUserSheet(serverId, userId);
+    if (this.sheets && sheetInfo) {
+      try {
+        const { SHEET_MAPPING } = require('../sheetsMapping');
+        await this.sheets.writeCell(sheetInfo.spreadsheetId, SHEET_MAPPING.dlois.noAndNameCell, full, sheetInfo.sheetName);
+        if (desc) {
+          await this.sheets.writeCell(sheetInfo.spreadsheetId, SHEET_MAPPING.dlois.descCell, desc, sheetInfo.sheetName);
+        }
+        sheetUpdated = true;
+      } catch (error) {
+        console.error('시트 D로이스 업데이트 오류:', error);
+      }
+    }
+    
+    let r = formatSuccess(`**${active}**의 D로이스가 설정되었습니다!`) + `\n> **${full}**\n`;
     if (desc) r += `> \n> ${desc}\n`;
+    if (sheetUpdated) r += `\n📊 시트가 자동으로 업데이트되었습니다!`;
     return message.reply(r);
   }
 
   async autoUpdateSheet(guild, serverId, userId, characterName) {
-    console.log(`🔍 [AUTO] autoUpdateSheet: ${characterName}`);
+    console.log(`\n🔍 [AUTO] ===== autoUpdateSheet 시작 =====`);
+    console.log(`   - Guild: ${guild ? guild.name : 'NULL'}`);
+    console.log(`   - Server ID: ${serverId}`);
+    console.log(`   - User ID: ${userId}`);
+    console.log(`   - Character Name: ${characterName}`);
+    console.log(`   - Database 인스턴스: ${this.db ? 'EXISTS' : 'NULL'}`);
+    console.log(`   - Database cache 키: ${this.db && this.db.cache ? Object.keys(this.db.cache).join(', ') : 'NONE'}`);
+    
     try {
+      console.log(`🔍 [AUTO] 1. 스레드 정보 조회 중...`);
       const ti = this.db.getCharacterSheetThread(serverId, userId, characterName);
-      if (!ti || !ti.threadId) return console.log(`⚠️ [AUTO] 스레드 정보 없음`);
+      console.log(`🔍 [AUTO] 스레드 정보:`, JSON.stringify(ti));
       
+      // DB 내부 데이터 구조 확인
+      console.log(`🔍 [AUTO] DB 내부 확인:`);
+      console.log(`   - cache.data 존재: ${this.db.cache.data ? 'YES' : 'NO'}`);
+      if (this.db.cache.data && this.db.cache.data[serverId]) {
+        console.log(`   - 서버 데이터 존재: YES`);
+        if (this.db.cache.data[serverId][userId]) {
+          console.log(`   - 유저 데이터 존재: YES`);
+          if (this.db.cache.data[serverId][userId][characterName]) {
+            console.log(`   - 캐릭터 데이터 존재: YES`);
+            console.log(`   - sheetThread:`, this.db.cache.data[serverId][userId][characterName].sheetThread);
+          } else {
+            console.log(`   - 캐릭터 데이터 존재: NO`);
+            console.log(`   - 사용 가능한 캐릭터들:`, Object.keys(this.db.cache.data[serverId][userId]));
+          }
+        } else {
+          console.log(`   - 유저 데이터 존재: NO`);
+        }
+      } else {
+        console.log(`   - 서버 데이터 존재: NO`);
+      }
+      
+      if (!ti || !ti.threadId) {
+        console.log(`⚠️ [AUTO] 스레드 정보 없음 - 업데이트 스킵`);
+        console.log(`🔍 [AUTO] ===== autoUpdateSheet 끝 (스레드 없음) =====\n`);
+        return;
+      }
+      
+      console.log(`🔍 [AUTO] 2. 포럼 채널 ID 조회 중...`);
       const fid = this.db.getSheetForumChannel(serverId);
-      if (!fid) return console.log(`⚠️ [AUTO] 포럼 채널 없음`);
+      console.log(`🔍 [AUTO] 포럼 채널 ID: ${fid}`);
       
+      if (!fid) {
+        console.log(`⚠️ [AUTO] 포럼 채널 ID 없음 - 업데이트 스킵`);
+        console.log(`🔍 [AUTO] ===== autoUpdateSheet 끝 (포럼 없음) =====\n`);
+        return;
+      }
+      
+      console.log(`🔍 [AUTO] 3. 포럼 채널 fetch 중...`);
       const fc = await guild.channels.fetch(fid);
-      if (!fc || fc.type !== 15) return console.log(`⚠️ [AUTO] 포럼 채널 타입 불일치`);
+      console.log(`🔍 [AUTO] 포럼 채널:`, fc ? `${fc.name} (type: ${fc.type})` : 'NULL');
       
+      if (!fc || fc.type !== 15) {
+        console.log(`⚠️ [AUTO] 포럼 채널 타입 불일치 - 업데이트 스킵`);
+        console.log(`🔍 [AUTO] ===== autoUpdateSheet 끝 (타입 불일치) =====\n`);
+        return;
+      }
+      
+      console.log(`🔍 [AUTO] 4. 스레드 fetch 중... (ID: ${ti.threadId})`);
       const th = await fc.threads.fetch(ti.threadId);
-      if (!th) return console.log(`⚠️ [AUTO] 스레드 없음`);
+      console.log(`🔍 [AUTO] 스레드:`, th ? `${th.name}` : 'NULL');
       
+      if (!th) {
+        console.log(`⚠️ [AUTO] 스레드 없음 - 업데이트 스킵`);
+        console.log(`🔍 [AUTO] ===== autoUpdateSheet 끝 (스레드 fetch 실패) =====\n`);
+        return;
+      }
+      
+      console.log(`🔍 [AUTO] 5. 캐릭터 데이터 조회 중...`);
       const cd = this.db.getCharacter(serverId, userId, characterName);
-      if (!cd) return console.log(`⚠️ [AUTO] 캐릭터 데이터 없음`);
+      console.log(`🔍 [AUTO] 캐릭터 데이터:`, cd ? `HP: ${cd.HP}, 침식률: ${cd.침식률}` : 'NULL');
       
+      if (!cd) {
+        console.log(`⚠️ [AUTO] 캐릭터 데이터 없음 - 업데이트 스킵`);
+        console.log(`🔍 [AUTO] ===== autoUpdateSheet 끝 (데이터 없음) =====\n`);
+        return;
+      }
+      
+      console.log(`🔍 [AUTO] 6. activeChar 객체 생성 중...`);
       const ac = { name: characterName, data: cd, fromSheet: false, serverId, userId };
+      console.log(`✅ [AUTO] activeChar 객체 생성 완료`);
+      
+      console.log(`🔍 [AUTO] 7. 시트 내용 생성 중...`);
       const content = this.generateSheetContent(ac);
+      console.log(`✅ [AUTO] 시트 내용 생성 완료 (길이: ${content.length}자)`);
+      
+      console.log(`🔍 [AUTO] 8. 메시지 fetch 중... (ID: ${ti.messageId})`);
       const msg = await th.messages.fetch(ti.messageId);
+      console.log(`✅ [AUTO] 메시지 fetch 완료`);
+      
+      console.log(`🔍 [AUTO] 9. 메시지 수정 중...`);
       await msg.edit(content);
-      console.log(`✅ [AUTO] ${characterName} 시트 업데이트 완료!`);
+      console.log(`✅ [AUTO] 메시지 수정 완료!`);
+      
+      console.log(`✅ [AUTO] ${characterName} 시트 자동 업데이트 완료!`);
+      console.log(`🔍 [AUTO] ===== autoUpdateSheet 끝 (성공) =====\n`);
     } catch (error) {
-      console.error('❌ [AUTO] 오류:', error.message);
+      console.error('❌ [AUTO] 오류 발생:', error.message);
+      console.error('❌ [AUTO] 스택:', error.stack);
+      console.log(`🔍 [AUTO] ===== autoUpdateSheet 끝 (오류) =====\n`);
     }
   }
 }

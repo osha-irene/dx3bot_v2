@@ -5,9 +5,10 @@
 const { extractName, formatError, formatSuccess } = require('../utils/helpers');
 
 class LoisCommands {
-  constructor(database, sheetsClient) {
+  constructor(database, sheetsClient, characterCommands = null) {
     this.db = database;
     this.sheets = sheetsClient;
+    this.charCmd = characterCommands;
   }
 
   async getActiveCharacterData(message) {
@@ -126,8 +127,15 @@ class LoisCommands {
       return message.channel.send(formatError(`**${activeChar.name}**에게 **"${loisName}"** 로이스가 존재하지 않습니다.`));
     }
 
-    // 로이스 삭제
-    activeChar.data.lois.splice(index, 1);
+    // 로이스 삭제 대신 취소선 추가
+    const targetLois = activeChar.data.lois[index];
+    activeChar.data.lois[index] = {
+      name: `~~${targetLois.name}~~`,
+      pEmotion: `~~${targetLois.pEmotion}~~`,
+      nEmotion: `~~${targetLois.nEmotion}~~`,
+      description: `~~${targetLois.description}~~`,
+      isTitus: true
+    };
 
     this.db.setCharacter(activeChar.serverId, activeChar.userId, activeChar.name, activeChar.data);
 
@@ -139,7 +147,6 @@ class LoisCommands {
         const { SHEET_MAPPING } = require('../sheetsMapping');
         
         // 시트에서 해당 로이스 찾아서 타이터스 체크 (AD, AE 열에 TRUE 입력)
-        // 67~73행에서 로이스 이름 찾기
         for (let row = SHEET_MAPPING.lois.startRow; row <= SHEET_MAPPING.lois.endRow; row++) {
           const cellName = `${SHEET_MAPPING.lois.nameCol}${row}`;
           const currentName = await this.sheets.readCell(sheetInfo.spreadsheetId, cellName, sheetInfo.sheetName);
@@ -155,6 +162,19 @@ class LoisCommands {
       } catch (error) {
         console.error('시트 타이터스 업데이트 오류:', error);
       }
+    }
+
+    // 포럼 시트 자동 업데이트
+    try {
+      if (this.charCmd) {
+        await this.charCmd.autoUpdateSheet(message.guild, activeChar.serverId, activeChar.userId, activeChar.name);
+      } else {
+        const CharacterCommands = require('./character');
+        const charCmd = new CharacterCommands(this.db, this.sheets);
+        await charCmd.autoUpdateSheet(message.guild, activeChar.serverId, activeChar.userId, activeChar.name);
+      }
+    } catch (error) {
+      console.error('포럼 시트 자동 업데이트 오류:', error);
     }
 
     let response = formatSuccess(`**${activeChar.name}**의 로이스 **"${loisName}"**가 타이터스로 변환되었습니다!`);

@@ -28,13 +28,16 @@ class SheetCommands {
     const serverId = message.guild.id;
     const userId = message.author.id;
 
+    // 🔄 로딩 메시지
+    const loadingMsg = await message.reply('🔄 시트에 접근 중...');
+
     // 서비스 계정 이메일 가져오기
     const serviceAccountEmail = await this.sheets.getServiceAccountEmail();
 
     // 접근 권한 확인
     const hasAccess = await this.sheets.testAccess(spreadsheetId);
     if (!hasAccess) {
-      return message.reply(
+      await loadingMsg.edit(
         formatError('시트에 접근할 수 없습니다.') + '\n\n' +
         '📌 **시트 공유 방법 (1분 소요):**\n\n' +
         `1️⃣ 자신의 시트를 열고 우측 상단 **"공유"** 버튼 클릭\n\n` +
@@ -43,19 +46,25 @@ class SheetCommands {
         `4️⃣ 완료되면 다시 \`!시트등록 ${sheetUrl}\` 입력!\n\n` +
         `💡 이 작업은 **단 한 번만** 하면 됩니다.`
       );
+      return;
     }
+
+    // 🔄 시트 탭 스캔 중
+    await loadingMsg.edit('🔄 시트 탭 목록을 확인하는 중...');
 
     // 시트 탭 목록 가져오기
     const sheetList = await this.sheets.getSheetList(spreadsheetId);
     
     if (!sheetList || sheetList.length === 0) {
-      return message.reply(formatError('시트의 탭 목록을 가져올 수 없습니다.'));
+      await loadingMsg.edit(formatError('시트의 탭 목록을 가져올 수 없습니다.'));
+      return;
     }
 
     // 탭이 하나만 있으면 자동 선택
     if (sheetList.length === 1) {
+      await loadingMsg.edit('🔄 캐릭터 데이터를 읽어오는 중...');
       const selectedSheet = sheetList[0].title;
-      return await this.completeRegistration(message, spreadsheetId, selectedSheet, serverId, userId);
+      return await this.completeRegistration(message, spreadsheetId, selectedSheet, serverId, userId, loadingMsg);
     }
 
     // 탭 이름이 지정된 경우
@@ -65,14 +74,16 @@ class SheetCommands {
       );
 
       if (!foundSheet) {
-        return message.reply(
+        await loadingMsg.edit(
           formatError(`"${sheetTabName}" 탭을 찾을 수 없습니다.`) + '\n\n' +
           '사용 가능한 탭:\n' +
           sheetList.map((sheet, idx) => `${idx + 1}. **${sheet.title}**`).join('\n')
         );
+        return;
       }
 
-      return await this.completeRegistration(message, spreadsheetId, foundSheet.title, serverId, userId);
+      await loadingMsg.edit('🔄 캐릭터 데이터를 읽어오는 중...');
+      return await this.completeRegistration(message, spreadsheetId, foundSheet.title, serverId, userId, loadingMsg);
     }
 
     // 탭이 여러 개인 경우 - 선택하게 함
@@ -83,13 +94,13 @@ class SheetCommands {
     response += '**예시:**\n';
     response += `\`!시트등록 ${sheetUrl} ${sheetList[0].title}\``;
 
-    return message.reply(response);
+    await loadingMsg.edit(response);
   }
 
   /**
    * 시트 등록 완료 처리
    */
-  async completeRegistration(message, spreadsheetId, sheetName, serverId, userId) {
+  async completeRegistration(message, spreadsheetId, sheetName, serverId, userId, loadingMsg = null) {
     try {
       // 시트 URL 및 탭 이름 저장
       this.db.setUserSheet(serverId, userId, `${spreadsheetId}::${sheetName}`);
@@ -98,10 +109,20 @@ class SheetCommands {
       const characterData = await this.sheets.readFullCharacter(spreadsheetId, sheetName);
       
       if (!characterData || !characterData.characterName) {
-        return message.reply(
-          formatWarning('시트에 접근할 수 있지만 캐릭터 데이터를 읽을 수 없습니다.') + '\n' +
-          `시트 탭 "${sheetName}"이(가) 올바른 템플릿인지 확인하세요.`
-        );
+        const errorMsg = formatWarning('시트에 접근할 수 있지만 캐릭터 데이터를 읽을 수 없습니다.') + '\n' +
+          `시트 탭 "${sheetName}"이(가) 올바른 템플릿인지 확인하세요.`;
+        
+        if (loadingMsg) {
+          return await loadingMsg.edit(errorMsg);
+        } else {
+          return message.reply(errorMsg);
+        }
+      }
+
+      // 🔥 기존 DB 데이터에서 emoji 보존
+      const existingData = this.db.getCharacter(serverId, userId, characterData.characterName);
+      if (existingData && existingData.emoji) {
+        characterData.emoji = existingData.emoji;
       }
 
       // 🔥 중요: 봇 DB에 캐릭터 데이터 저장
@@ -110,21 +131,29 @@ class SheetCommands {
       // 🔥 자동으로 활성 캐릭터 지정
       this.db.setActiveCharacter(serverId, userId, characterData.characterName);
 
-      return message.reply(
-        formatSuccess(`시트가 등록되었습니다!`) + '\n' +
+      const successMsg = formatSuccess(`시트가 등록되었습니다!`) + '\n' +
         `📊 시트 탭: **${sheetName}**\n` +
-        `캐릭터: **${characterData.characterName}**\n` +
-        `HP: ${characterData.HP} | 침식률: ${characterData.침식률}\n` +
-        `침식D: ${characterData.침식D} | 로이스: ${characterData.로이스}개\n\n` +
-        `**${characterData.characterName}** 캐릭터가 자동으로 활성화되었습니다!\n` +
-        `이제 봇 명령어를 사용하면 자동으로 시트가 업데이트됩니다!`
-      );
+        `📝 캐릭터: **${characterData.characterName}**\n` +
+        `💚 HP: ${characterData.HP} | 🔴 침식률: ${characterData.침식률}\n` +
+        `⚡ 침식D: ${characterData.침식D} | 💙 로이스: ${characterData.로이스}개\n\n` +
+        `✅ **${characterData.characterName}** 캐릭터가 자동으로 활성화되었습니다!\n` +
+        `이제 봇 명령어를 사용하면 자동으로 시트가 업데이트됩니다!`;
+
+      if (loadingMsg) {
+        return await loadingMsg.edit(successMsg);
+      } else {
+        return message.reply(successMsg);
+      }
     } catch (error) {
       console.error('시트 데이터 읽기 오류:', error);
-      return message.reply(
-        formatWarning('시트는 등록되었지만 데이터를 읽는 중 오류가 발생했습니다.') + '\n' +
-        '나중에 `!시트동기화` 명령어로 다시 시도해보세요.'
-      );
+      const errorMsg = formatWarning('시트는 등록되었지만 데이터를 읽는 중 오류가 발생했습니다.') + '\n' +
+        '나중에 `!시트동기화` 명령어로 다시 시도해보세요.';
+      
+      if (loadingMsg) {
+        return await loadingMsg.edit(errorMsg);
+      } else {
+        return message.reply(errorMsg);
+      }
     }
   }
 
@@ -147,11 +176,15 @@ class SheetCommands {
       );
     }
 
+    // 🔄 로딩 메시지
+    const loadingMsg = await message.reply('🔄 시트에서 데이터를 읽어오는 중...');
+
     try {
       const characterData = await this.sheets.readFullCharacter(sheetInfo.spreadsheetId, sheetInfo.sheetName);
       
       if (!characterData || !characterData.characterName) {
-        return message.reply(formatError('시트에서 캐릭터 데이터를 읽을 수 없습니다.'));
+        await loadingMsg.edit(formatError('시트에서 캐릭터 데이터를 읽을 수 없습니다.'));
+        return;
       }
 
       // 봇 DB에 저장
@@ -162,14 +195,14 @@ class SheetCommands {
       if (sheetInfo.sheetName) {
         response += `📊 시트 탭: **${sheetInfo.sheetName}**\n`;
       }
-      response += `캐릭터: **${characterData.characterName}** (${characterData.codeName || '코드네임 없음'})\n`;
-      response += `HP: ${characterData.HP} | 침식률: ${characterData.침식률} | 침식D: ${characterData.침식D}\n`;
-      response += `로이스: ${characterData.로이스}개`;
+      response += `📝 캐릭터: **${characterData.characterName}** (${characterData.codeName || '코드네임 없음'})\n`;
+      response += `💚 HP: ${characterData.HP} | 🔴 침식률: ${characterData.침식률} | ⚡ 침식D: ${characterData.침식D}\n`;
+      response += `💙 로이스: ${characterData.로이스}개`;
 
-      return message.reply(response);
+      await loadingMsg.edit(response);
     } catch (error) {
       console.error('시트 동기화 오류:', error);
-      return message.reply(formatError('시트 동기화 중 오류가 발생했습니다: ' + error.message));
+      await loadingMsg.edit(formatError('시트 동기화 중 오류가 발생했습니다: ' + error.message));
     }
   }
 
@@ -213,7 +246,7 @@ class SheetCommands {
 
       return message.reply(
         formatSuccess('봇 데이터를 시트로 업로드했습니다!') + '\n' +
-        `HP: ${characterData.HP} | 침식률: ${characterData.침식률}`
+        `💚 HP: ${characterData.HP} | 🔴 침식률: ${characterData.침식률}`
       );
     } catch (error) {
       console.error('시트 푸시 오류:', error);

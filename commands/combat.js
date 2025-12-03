@@ -93,11 +93,16 @@ class CombatCommands {
    * !등침 또는 !등장침식
    */
   async entryErosion(message) {
+    console.log(`\n🎲 [등장침식 1] ===== 명령어 시작 =====`);
+    console.log(`   - 유저: ${message.author.tag}`);
+    console.log(`   - 시간: ${new Date().toLocaleTimeString('ko-KR')}`);
+    
     const activeChar = await this.getActiveCharacterData(message);
     if (!activeChar) {
       return message.reply(formatError('활성화된 캐릭터가 없습니다. `!지정 [캐릭터 이름]` 명령어로 캐릭터를 지정해주세요.'));
     }
 
+    console.log(`   - 활성 캐릭터: ${activeChar.name}`);
     const serverId = message.guild.id;
     const userId = message.author.id;
 
@@ -112,6 +117,9 @@ class CombatCommands {
       sheetName: activeChar.sheetName
     };
 
+    console.log(`✅ [등장침식 1] 요청자 등록 완료`);
+    console.log(`🎲 [등장침식 1] ===== 명령어 끝 (주사위 대기) =====\n`);
+
     return message.channel.send(`1d10 등장침식 ${mentionUser(message.author.id)}`);
   }
 
@@ -119,30 +127,62 @@ class CombatCommands {
    * 주사위 봇 결과 처리
    */
   async handleDiceResult(diceMessage) {
+    console.log(`\n🎲 [등장침식 2] ===== 주사위 결과 감지 =====`);
+    console.log(`   - 시간: ${new Date().toLocaleTimeString('ko-KR')}`);
+    console.log(`   - 메시지: ${diceMessage.content}`);
+    
     const diceResultMatch = diceMessage.content.match(/(?:\(\d+D\d+\)|＞.*?)\s*＞\s*(\d+)/);
-    if (!diceResultMatch) return;
+    if (!diceResultMatch) {
+      console.log(`⚠️ [등장침식 2] 주사위 결과 패턴 불일치 - 무시\n`);
+      return;
+    }
 
     const diceResult = parseInt(diceResultMatch[1]);
+    console.log(`   - 주사위 결과: ${diceResult}`);
+    
     const serverId = diceMessage.guild?.id;
 
-    if (!serverId || !this.erosionRequesters[serverId]) return;
+    if (!serverId || !this.erosionRequesters[serverId]) {
+      console.log(`⚠️ [등장침식 2] 등장침식 요청자 없음 - 무시\n`);
+      return;
+    }
 
     const userId = Object.keys(this.erosionRequesters[serverId])[0];
-    if (!userId) return;
+    if (!userId) {
+      console.log(`⚠️ [등장침식 2] userId 없음 - 무시\n`);
+      return;
+    }
 
     const requester = this.erosionRequesters[serverId][userId];
+    console.log(`   - 요청자: ${requester.characterName}`);
+    console.log(`   - fromSheet: ${requester.fromSheet}`);
+    
     delete this.erosionRequesters[serverId][userId];
+    console.log(`✅ [등장침식 2] 요청자 삭제 완료`);
 
     // 시트 연동 캐릭터인 경우
     if (requester.fromSheet && requester.spreadsheetId && this.sheets) {
+      console.log(`📊 [등장침식 2] 시트 연동 캐릭터 처리 시작`);
       try {
         // 🚀 배치 읽기로 현재 침식률 가져오기
         const currentData = await this.sheets.readFullCharacter(requester.spreadsheetId, requester.sheetName);
         const oldErosion = currentData.침식률 || 0;
         const newErosion = oldErosion + diceResult;
+        console.log(`   - 기존 침식률: ${oldErosion}`);
+        console.log(`   - 새 침식률: ${newErosion}`);
 
         // 시트 업데이트
         await this.sheets.updateStat(requester.spreadsheetId, '침식률', newErosion, requester.sheetName);
+        console.log(`✅ [등장침식 2] 시트 업데이트 완료`);
+
+        // DB도 함께 업데이트 (포럼 반영용)
+        const dbCharacterData = this.db.getCharacter(serverId, userId, requester.characterName);
+        if (dbCharacterData) {
+          dbCharacterData.침식률 = newErosion;
+          dbCharacterData.침식D = calculateErosionD(newErosion);
+          this.db.setCharacter(serverId, userId, requester.characterName, dbCharacterData);
+          console.log(`✅ [등장침식 2] DB도 함께 업데이트 완료`);
+        }
 
         // 침식D 변화 감지
         const change = detectErosionDChange(oldErosion, newErosion);
@@ -157,26 +197,49 @@ class CombatCommands {
         responseMessage += `\n📊 시트가 자동으로 업데이트되었습니다!`;
         responseMessage += `\n${mentionUser(userId)}`;
 
-        return diceMessage.channel.send(responseMessage);
+        console.log(`📤 [등장침식 2] 응답 메시지 준비 완료`);
+        console.log(`🔄 [등장침식 2] 포럼 업데이트 시작... (시간: ${new Date().toLocaleTimeString('ko-KR')})`);
+        
+        // 포럼 시트도 자동 업데이트
+        await this.autoUpdateCharacterSheet(diceMessage.guild, serverId, userId, requester.characterName);
+        
+        console.log(`✅ [등장침식 2] 포럼 업데이트 완료 (시간: ${new Date().toLocaleTimeString('ko-KR')})`);
+        console.log(`📤 [등장침식 2] 디스코드 메시지 전송 (시트 연동)`);
+        
+        await diceMessage.channel.send(responseMessage);
+        
+        console.log(`✅ [등장침식 2] 메시지 전송 완료`);
+        console.log(`🎲 [등장침식 2] ===== 시트 연동 처리 완료 =====\n`);
+        return;
       } catch (error) {
-        console.error('시트 침식률 업데이트 오류:', error);
+        console.error(`❌ [등장침식 2] 시트 침식률 업데이트 오류:`, error);
+        console.log(`🔄 [등장침식 2] DB로 폴백합니다...`);
         // 오류 시 DB로 폴백
       }
     }
 
     // DB 캐릭터 처리
+    console.log(`💾 [등장침식 2] DB 캐릭터 처리 시작`);
     const characterData = this.db.getCharacter(serverId, userId, requester.characterName);
-    if (!characterData) return;
+    if (!characterData) {
+      console.log(`❌ [등장침식 2] 캐릭터 데이터 없음\n`);
+      return;
+    }
 
     const oldErosion = characterData.침식률 || 0;
     const newErosion = oldErosion + diceResult;
+    console.log(`   - 기존 침식률: ${oldErosion}`);
+    console.log(`   - 새 침식률: ${newErosion}`);
+    
     characterData.침식률 = newErosion;
 
     // 침식D 업데이트
     const change = detectErosionDChange(oldErosion, newErosion);
     characterData.침식D = calculateErosionD(newErosion);
 
+    console.log(`💾 [등장침식 2] DB 저장 중...`);
     this.db.setCharacter(serverId, userId, requester.characterName, characterData);
+    console.log(`✅ [등장침식 2] DB 저장 완료`);
 
     let responseMessage = `${requester.characterName} 등장침식 +${diceResult} → 현재 침식률: ${newErosion}`;
 
@@ -186,10 +249,21 @@ class CombatCommands {
 
     responseMessage += `\n${mentionUser(userId)}`;
 
-    // 포럼 시트 자동 업데이트
-    this.autoUpdateCharacterSheet(diceMessage.guild, serverId, userId, requester.characterName);
-
-    return diceMessage.channel.send(responseMessage);
+    console.log(`📤 [등장침식 2] 응답 메시지 준비 완료`);
+    console.log(`🔄 [등장침식 2] 포럼 업데이트 시작... (시간: ${new Date().toLocaleTimeString('ko-KR')})`);
+    
+    // 포럼 시트 자동 업데이트 (await 추가!)
+    await this.autoUpdateCharacterSheet(diceMessage.guild, serverId, userId, requester.characterName);
+    
+    console.log(`✅ [등장침식 2] 포럼 업데이트 완료 (시간: ${new Date().toLocaleTimeString('ko-KR')})`);
+    console.log(`📤 [등장침식 2] 디스코드 메시지 전송 중...`);
+    
+    const sentMessage = await diceMessage.channel.send(responseMessage);
+    
+    console.log(`✅ [등장침식 2] 메시지 전송 완료 (시간: ${new Date().toLocaleTimeString('ko-KR')})`);
+    console.log(`🎲 [등장침식 2] ===== DB 처리 완료 =====\n`);
+    
+    return sentMessage;
   }
 
   /**
@@ -244,6 +318,9 @@ class CombatCommands {
         response += `\n📊 시트가 자동으로 업데이트되었습니다!`;
       }
 
+      // 포럼 시트 자동 업데이트
+      await this.autoUpdateCharacterSheet(message.guild, activeChar.serverId, activeChar.userId, activeChar.name);
+
       return message.reply(response);
     }
 
@@ -278,10 +355,18 @@ class CombatCommands {
    * 캐릭터 시트 자동 업데이트 (포럼 스레드)
    */
   async autoUpdateCharacterSheet(guild, serverId, userId, characterName) {
-    // CharacterCommands 인스턴스 필요
-    const CharacterCommands = require('./character');
-    const charCmd = new CharacterCommands(this.db, this.sheets);
-    await charCmd.autoUpdateSheet(guild, serverId, userId, characterName);
+    console.log(`🔍 [COMBAT] autoUpdateCharacterSheet 호출됨`);
+    console.log(`   - Guild: ${guild.name}`);
+    console.log(`   - Character: ${characterName}`);
+    
+    try {
+      // CharacterCommands 인스턴스 필요
+      const CharacterCommands = require('./character');
+      const charCmd = new CharacterCommands(this.db, this.sheets);
+      await charCmd.autoUpdateSheet(guild, serverId, userId, characterName);
+    } catch (error) {
+      console.error('❌ [COMBAT] autoUpdateCharacterSheet 오류:', error.message);
+    }
   }
 
   /**
