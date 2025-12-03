@@ -1,0 +1,9 @@
+.env
+node_modules
+data.json
+comboData.json
+activeCharacter.json
+version.json
+google-credentials.json
+*.log
+.DS_Store

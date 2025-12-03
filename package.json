@@ -1,0 +1,20 @@
+{
+  "name": "dx3bot",
+  "version": "1.0.0",
+  "description": "Double Cross 3rd Edition TRPG Discord Bot with Google Sheets Integration",
+  "main": "dx3bot.js",
+  "scripts": {
+    "start": "node dx3bot.js",
+    "dev": "node dx3bot.js",
+    "check": "node check-setup.js",
+    "test": "node check-setup.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "discord.js": "^14.17.3",
+    "dotenv": "^16.0.0",
+    "googleapis": "^128.0.0"
+  }
+}
