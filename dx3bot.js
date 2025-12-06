@@ -85,6 +85,79 @@ client.on(Events.MessageCreate, async (message) => {
   await commandHandler.handle(message);
 });
 
+// 버튼 인터랙션 처리
+client.on(Events.InteractionCreate, async (interaction) => {
+  if (!interaction.isButton()) return;
+
+  // 콤보 주사위 굴림
+  if (interaction.customId.startsWith('combo_roll_')) {
+    const [, , userId, skill, bonusDice, critical] = interaction.customId.split('_');
+    
+    // 권한 확인
+    if (interaction.user.id !== userId) {
+      return interaction.reply({ content: '❌ 다른 사람의 콤보입니다!', ephemeral: true });
+    }
+
+    try {
+      const activeChar = await commandHandler.combatCmd.getActiveCharacterData(interaction);
+      if (!activeChar) {
+        return interaction.reply({ content: '❌ 활성 캐릭터가 없습니다.', ephemeral: true });
+      }
+
+      const characterData = activeChar.data;
+      
+      // 기능 → 상위 능력치 매핑
+      const skillToMain = {
+        '백병': '육체',
+        '회피': '육체',
+        '사격': '감각',
+        '지각': '감각',
+        'RC': '정신',
+        '의지': '정신',
+        '교섭': '사회',
+        '조달': '사회'
+      };
+      
+      let mainAttr = skillToMain[skill] || '육체';
+      
+      // 동적 기능 처리 (운전:, 정보: 등)
+      if (skill.includes(':')) {
+        const prefix = skill.split(':')[0];
+        const dynamicMapping = {
+          '운전': '육체',
+          '예술': '감각',
+          '지식': '정신',
+          '정보': '사회'
+        };
+        mainAttr = dynamicMapping[prefix] || '육체';
+      }
+
+      const mainValue = characterData[mainAttr] || 0;
+      const skillValue = characterData[skill] || 0;
+      const erosionD = characterData.침식D || 0;
+      const bonusDiceNum = parseInt(bonusDice) || 0;
+
+      const totalDice = mainValue + erosionD + bonusDiceNum;
+      const diceFormula = `${totalDice}dx${critical}+${skillValue}`;
+
+      // 버튼 비활성화
+      await interaction.update({ components: [] });
+
+      // 주사위 메시지 전송
+      return await interaction.channel.send(`${diceFormula} ${skill} 판정 <@${userId}>`);
+
+    } catch (error) {
+      console.error('콤보 주사위 굴림 오류:', error);
+      return interaction.reply({ content: '❌ 주사위를 굴리는 중 오류가 발생했습니다.', ephemeral: true });
+    }
+  }
+
+  // 취소 버튼
+  if (interaction.customId === 'combo_cancel') {
+    return await interaction.update({ components: [] });
+  }
+});
+
 // 전역 오류 처리
 client.on('error', async (error) => {
   console.error('🚨 [봇 오류]:', error);

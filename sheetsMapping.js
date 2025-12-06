@@ -113,7 +113,7 @@ const SHEET_MAPPING = {
   
   // 방어구
   armor: {
-    startRow: 100,
+    startRow: 99,
     endRow: 104,
     nameCol: 'B',          // 이름
     typeCol: 'H',          // 종별
@@ -145,6 +145,52 @@ const SHEET_MAPPING = {
     typeCol: 'H',          // 종별
     abilityCol: 'J',       // 기능
     descCol: 'S'           // 내용
+  },
+  
+  // 이펙트 (164~168, 172~193)
+  effect: {
+    rows: [164, 165, 166, 167, 168, 
+           172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193],
+    nameCol: 'C',          // 이펙트명
+    currentLevelCol: 'H',  // 현재 레벨
+    maxLevelCol: 'I',      // 최대 레벨
+    timingCol: 'J',        // 타이밍
+    abilityCol: 'L',       // 기능
+    difficultyCol: 'N',    // 난이도
+    targetCol: 'Q',        // 대상
+    rangeCol: 'S',         // 사정거리
+    erosionCol: 'U',       // 상승 침식률
+    restrictionCol: 'W',   // 제한 조건
+    effectCol: 'Y'         // 효과 내용
+  },
+  
+  // 콤보 (196~237, 6행 단위)
+  combo: {
+    startRow: 196,
+    endRow: 237,
+    interval: 6,           // 6행마다 반복
+    nameCol: 'B',          // 콤보명 (N행)
+    timingCol: 'Q',        // 타이밍 (N+1행)
+    skillCol: 'S',         // 사용 기능 (N+1행)
+    difficultyCol: 'U',    // 난이도 (N+1행)
+    targetCol: 'W',        // 대상 (N+1행)
+    rangeCol: 'Y',         // 사정거리 (N+1행)
+    restrictionCol: 'AB',  // 제한 (N+1행)
+    erosionCol: 'AD',      // 상승 침식률 (N+1행)
+    
+    // 99↓ 조건
+    effectList99Col: 'D',  // 이펙트 목록 (N+2행)
+    content99Col: 'D',     // 내용 (N+3행)
+    dice99Col: 'Y',        // +다이스 (N+3행)
+    critical99Col: 'AB',   // 크리티컬치 (N+3행)
+    attack99Col: 'AD',     // 공격력 (N+3행)
+    
+    // 100↑ 조건
+    effectList100Col: 'D', // 이펙트 목록 (N+4행)
+    content100Col: 'D',    // 내용 (N+5행)
+    dice100Col: 'Y',       // +다이스 (N+5행)
+    critical100Col: 'AB',  // 크리티컬치 (N+5행)
+    attack100Col: 'AD'     // 공격력 (N+5행)
   },
   
   // 종자 데이터 (필요시)
@@ -208,10 +254,37 @@ function calculateErosionD(erosion) {
   return 0;
 }
 
+/**
+ * 침식률과 기원종 여부로 이펙트 레벨 계산
+ * @param {number} erosion - 침식률
+ * @param {boolean} isKigenShu - 기원종 여부
+ * @returns {number} - 이펙트 레벨
+ */
+function calculateEffectLevel(erosion, isKigenShu) {
+  if (isKigenShu) {
+    // 기원종
+    if (erosion >= 200) return 4;
+    if (erosion >= 150) return 3;
+    if (erosion >= 100) return 2;
+    if (erosion >= 80) return 1;
+    return 0;
+  } else {
+    // 일반
+    if (erosion >= 260) return 3;
+    if (erosion >= 220) return 3;
+    if (erosion >= 190) return 2;
+    if (erosion >= 160) return 2;
+    if (erosion >= 130) return 1;
+    if (erosion >= 100) return 1;
+    return 0;
+  }
+}
+
 module.exports = {
   SHEET_MAPPING,
   STAT_TO_CELL,
   SUB_SKILLS,
   EROSION_THRESHOLDS,
-  calculateErosionD
+  calculateErosionD,
+  calculateEffectLevel
 };

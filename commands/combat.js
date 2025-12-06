@@ -384,7 +384,7 @@ class CombatCommands {
   }
 
   /**
-   * !@[콤보 이름] - 콤보 호출
+   * !@[콤보 이름] - 콤보 호출 (시트 기반 + Embed + 자동 굴림)
    */
   async callCombo(message, comboName) {
     const activeChar = await this.getActiveCharacterData(message);
@@ -392,19 +392,84 @@ class CombatCommands {
       return message.reply(formatError('활성화된 캐릭터가 없습니다. `!지정 ["캐릭터 이름"]` 명령어로 캐릭터를 지정해주세요.'));
     }
 
-    const combos = this.db.getCombos(activeChar.serverId, activeChar.userId, activeChar.name);
-    
-    if (!combos[comboName]) {
-      return message.channel.send(formatError(`**${activeChar.name}**의 콤보 '${comboName}'를 찾을 수 없습니다.`));
+    // 시트 연동 확인
+    if (!activeChar.fromSheet || !activeChar.spreadsheetId || !this.sheets) {
+      return message.reply(formatError('콤보 기능은 시트 연동 캐릭터만 사용할 수 있습니다. `!시트등록`을 먼저 해주세요.'));
     }
 
-    const currentErosion = activeChar.data.침식률 || 0;
-    const bestCombo = findBestCombo(currentErosion, combos[comboName]);
+    try {
+      // 시트에서 콤보 읽기
+      const combos = await this.sheets.readCombos(activeChar.spreadsheetId, activeChar.sheetName);
+      const combo = combos.find(c => c.name === comboName);
 
-    if (bestCombo) {
-      return message.channel.send(`> **${bestCombo.condition} 【${comboName}】**\n> ${bestCombo.description}`);
-    } else {
-      return message.channel.send(formatError(`침식률 조건에 맞는 '${comboName}' 콤보를 찾을 수 없습니다.`));
+      if (!combo) {
+        return message.channel.send(formatError(`콤보 '${comboName}'를 찾을 수 없습니다. 시트의 196~237행을 확인해주세요.`));
+      }
+
+      const currentErosion = activeChar.data.침식률 || 0;
+      
+      // 침식률에 맞는 버전 선택
+      const version = currentErosion >= 100 ? '100↑' : '99↓';
+      const comboData = combo[version];
+
+      // Embed 생성
+      const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+      
+      const embed = new EmbedBuilder()
+        .setColor(currentErosion >= 100 ? 0xFF4444 : 0x4444FF)
+        .setTitle(`⚔ ${combo.name} (침식률 ${currentErosion}, ${version})`)
+        .setDescription(`${comboData.effectList || '효과 없음'}`)
+        .addFields(
+          { name: '📝 내용', value: comboData.content || '내용 없음', inline: false }
+        );
+
+      // 상세 정보 추가
+      let details = '';
+      if (combo.timing) details += `⏱ 타이밍: ${combo.timing}\n`;
+      if (combo.skill) details += `🎯 사용 기능: ${combo.skill}\n`;
+      if (combo.target) details += `👥 대상: ${combo.target}\n`;
+      if (combo.range) details += `📏 사정거리: ${combo.range}\n`;
+      if (combo.difficulty) details += `🎲 난이도: ${combo.difficulty}\n`;
+      if (combo.restriction) details += `⚠️ 제한: ${combo.restriction}\n`;
+      if (combo.erosion) details += `🔴 침식률: ${combo.erosion}\n`;
+      
+      if (details) embed.addFields({ name: '📋 상세 정보', value: details, inline: false });
+
+      // 효과 요약
+      let effects = '';
+      if (comboData.dice) effects += `🎲 다이스: +${comboData.dice}D\n`;
+      if (comboData.critical) effects += `💥 크리티컬: ${comboData.critical}\n`;
+      if (comboData.attack) effects += `⚔️ 공격력: +${comboData.attack}\n`;
+      
+      if (effects) embed.addFields({ name: '✨ 효과', value: effects, inline: false });
+
+      // 침식률 경고
+      let footerText = '';
+      if (currentErosion >= 220) {
+        footerText = '⚠️ 침식률 220 이상: 더 강력한 콤보가 필요합니다!\n💡 시트의 다음 콤보 슬롯(202, 208, 214...)에 220↑ 조건을 추가하세요.';
+      } else if (currentErosion >= 160) {
+        footerText = '⚠️ 침식률 160 이상: 고레벨 콤보를 추가할 수 있습니다!\n💡 시트의 행 200, 206, 212... (N+4)에 160↑ 조건을 추가하세요.';
+      }
+      if (footerText) embed.setFooter({ text: footerText });
+
+      // 자동 주사위 굴림 버튼
+      const row = new ActionRowBuilder()
+        .addComponents(
+          new ButtonBuilder()
+            .setCustomId(`combo_roll_${message.author.id}_${combo.skill}_${comboData.dice}_${comboData.critical}`)
+            .setLabel('🎲 주사위 굴리기')
+            .setStyle(ButtonStyle.Success),
+          new ButtonBuilder()
+            .setCustomId('combo_cancel')
+            .setLabel('❌ 취소')
+            .setStyle(ButtonStyle.Secondary)
+        );
+
+      return await message.channel.send({ embeds: [embed], components: [row] });
+
+    } catch (error) {
+      console.error('콤보 호출 오류:', error);
+      return message.channel.send(formatError('콤보를 불러오는 중 오류가 발생했습니다.'));
     }
   }
 

@@ -648,6 +648,101 @@ class SheetsClient {
       return false;
     }
   }
+
+  /**
+   * 시트에서 콤보 목록 읽기
+   * @param {string} spreadsheetId - 스프레드시트 ID
+   * @param {string} sheetName - 시트 이름
+   * @returns {Array} - 콤보 목록
+   */
+  async readCombos(spreadsheetId, sheetName = null) {
+    try {
+      const range = sheetName ? `'${sheetName}'!A1:AH250` : 'A1:AH250';
+      const response = await this.sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range
+      });
+      
+      const rows = response.data.values || [];
+      
+      const colToIndex = (col) => {
+        let index = 0;
+        for (let i = 0; i < col.length; i++) {
+          index = index * 26 + (col.charCodeAt(i) - 'A'.charCodeAt(0) + 1);
+        }
+        return index - 1;
+      };
+      
+      const getCell = (cellRef) => {
+        const match = cellRef.match(/([A-Z]+)(\d+)/);
+        if (!match) return null;
+        const col = colToIndex(match[1]);
+        const row = parseInt(match[2]) - 1;
+        return rows[row]?.[col] || null;
+      };
+      
+      const comboList = [];
+      const { startRow, endRow, interval } = SHEET_MAPPING.combo;
+      
+      for (let baseRow = startRow; baseRow <= endRow; baseRow += interval) {
+        const comboName = getCell(`${SHEET_MAPPING.combo.nameCol}${baseRow}`);
+        if (!comboName || !comboName.trim()) continue;
+        
+        // 기본 정보 (N+1행)
+        const timing = getCell(`${SHEET_MAPPING.combo.timingCol}${baseRow + 1}`);
+        const skill = getCell(`${SHEET_MAPPING.combo.skillCol}${baseRow + 1}`);
+        const difficulty = getCell(`${SHEET_MAPPING.combo.difficultyCol}${baseRow + 1}`);
+        const target = getCell(`${SHEET_MAPPING.combo.targetCol}${baseRow + 1}`);
+        const range = getCell(`${SHEET_MAPPING.combo.rangeCol}${baseRow + 1}`);
+        const restriction = getCell(`${SHEET_MAPPING.combo.restrictionCol}${baseRow + 1}`);
+        const erosion = getCell(`${SHEET_MAPPING.combo.erosionCol}${baseRow + 1}`);
+        
+        // 99↓ 데이터
+        const effectList99 = getCell(`${SHEET_MAPPING.combo.effectList99Col}${baseRow + 2}`);
+        const content99 = getCell(`${SHEET_MAPPING.combo.content99Col}${baseRow + 3}`);
+        const dice99 = getCell(`${SHEET_MAPPING.combo.dice99Col}${baseRow + 3}`);
+        const critical99 = getCell(`${SHEET_MAPPING.combo.critical99Col}${baseRow + 3}`);
+        const attack99 = getCell(`${SHEET_MAPPING.combo.attack99Col}${baseRow + 3}`);
+        
+        // 100↑ 데이터
+        const effectList100 = getCell(`${SHEET_MAPPING.combo.effectList100Col}${baseRow + 4}`);
+        const content100 = getCell(`${SHEET_MAPPING.combo.content100Col}${baseRow + 5}`);
+        const dice100 = getCell(`${SHEET_MAPPING.combo.dice100Col}${baseRow + 5}`);
+        const critical100 = getCell(`${SHEET_MAPPING.combo.critical100Col}${baseRow + 5}`);
+        const attack100 = getCell(`${SHEET_MAPPING.combo.attack100Col}${baseRow + 5}`);
+        
+        comboList.push({
+          name: comboName.trim(),
+          timing: timing || '',
+          skill: skill || '',
+          difficulty: difficulty || '',
+          target: target || '',
+          range: range || '',
+          restriction: restriction || '',
+          erosion: erosion || '',
+          '99↓': {
+            effectList: effectList99 || '',
+            content: content99 || '',
+            dice: dice99 || '',
+            critical: critical99 || '',
+            attack: attack99 || ''
+          },
+          '100↑': {
+            effectList: effectList100 || '',
+            content: content100 || '',
+            dice: dice100 || '',
+            critical: critical100 || '',
+            attack: attack100 || ''
+          }
+        });
+      }
+      
+      return comboList;
+    } catch (error) {
+      console.error('콤보 읽기 오류:', error.message);
+      return [];
+    }
+  }
 }
 
 module.exports = SheetsClient;
