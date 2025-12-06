@@ -27,6 +27,16 @@ class CharacterCommands {
           if (dbData && dbData.emoji) {
             data.emoji = dbData.emoji;
           }
+          
+          // 🔥 이펙트 읽기
+          try {
+            const effects = await this.sheets.readEffects(sheetInfo.spreadsheetId, sheetInfo.sheetName);
+            data.effects = effects;
+          } catch (error) {
+            console.error('이펙트 읽기 오류:', error);
+            data.effects = [];
+          }
+          
           return { name: data.characterName, data, fromSheet: true, spreadsheetId: sheetInfo.spreadsheetId, sheetName: sheetInfo.sheetName, serverId, userId };
         }
       } catch (error) {
@@ -330,8 +340,39 @@ class CharacterCommands {
     }
     
     if (d.effects && d.effects.length > 0) {
-      r += `\n${emoji}  **이펙트**\n`;
-      for (let e of d.effects) r += `> ㆍ **${e.name}** | ${e.description}\n`;
+      // 이펙트 레벨 계산
+      const currentErosion = d.침식률 || 0;
+      const isKigenShu = d.dloisName && d.dloisName.includes('기원종');
+      const { calculateEffectLevel } = require('../sheetsMapping');
+      const effectLevel = calculateEffectLevel(currentErosion, isKigenShu);
+      
+      r += `\n${emoji}  **이펙트** (침식률 ${currentErosion}, Lv ${effectLevel}${isKigenShu ? ' 기원종' : ''})\n`;
+      
+      for (let e of d.effects) {
+        // 현재 레벨에 해당하는 이펙트만 표시하거나 레벨 정보 표시
+        if (e.currentLevel !== undefined) {
+          // 시트에서 읽어온 이펙트 (레벨 정보 있음)
+          r += `> ㆍ **${e.name}** Lv ${e.currentLevel}/${e.maxLevel}\n`;
+          
+          // 효과 내용에서 [LV+N] 치환
+          let effectText = e.effect || '';
+          effectText = effectText.replace(/\[LV\+(\d+)\]/gi, (match, bonus) => {
+            return `[${e.currentLevel + parseInt(bonus)}]`;
+          });
+          effectText = effectText.replace(/\[LV\]/gi, `[${e.currentLevel}]`);
+          
+          let details = `-# > 　　`;
+          if (e.timing) details += `${e.timing}`;
+          if (e.ability) details += ` | ${e.ability}`;
+          if (e.target) details += ` | ${e.target}`;
+          if (e.range) details += ` | ${e.range}`;
+          r += `${details}\n`;
+          r += `-# > 　${effectText}\n`;
+        } else {
+          // DB에 저장된 간단한 이펙트
+          r += `> ㆍ **${e.name}** | ${e.description}\n`;
+        }
+      }
     }
     
     if (activeChar.fromSheet) {

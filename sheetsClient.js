@@ -650,6 +650,78 @@ class SheetsClient {
   }
 
   /**
+   * 시트에서 이펙트 목록 읽기
+   * @param {string} spreadsheetId - 스프레드시트 ID
+   * @param {string} sheetName - 시트 이름
+   * @returns {Array} - 이펙트 목록
+   */
+  async readEffects(spreadsheetId, sheetName = null) {
+    try {
+      const range = sheetName ? `'${sheetName}'!A1:Z200` : 'A1:Z200';
+      const response = await this.sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range
+      });
+      
+      const rows = response.data.values || [];
+      
+      const colToIndex = (col) => {
+        let index = 0;
+        for (let i = 0; i < col.length; i++) {
+          index = index * 26 + (col.charCodeAt(i) - 'A'.charCodeAt(0) + 1);
+        }
+        return index - 1;
+      };
+      
+      const getCell = (cellRef) => {
+        const match = cellRef.match(/([A-Z]+)(\d+)/);
+        if (!match) return null;
+        const col = colToIndex(match[1]);
+        const row = parseInt(match[2]) - 1;
+        return rows[row]?.[col] || null;
+      };
+      
+      const effectList = [];
+      const { rows: effectRows } = SHEET_MAPPING.effect;
+      
+      for (let row of effectRows) {
+        const name = getCell(`${SHEET_MAPPING.effect.nameCol}${row}`);
+        if (!name || !name.trim()) continue;
+        
+        const currentLevel = parseInt(getCell(`${SHEET_MAPPING.effect.currentLevelCol}${row}`)) || 0;
+        const maxLevel = parseInt(getCell(`${SHEET_MAPPING.effect.maxLevelCol}${row}`)) || 0;
+        const timing = getCell(`${SHEET_MAPPING.effect.timingCol}${row}`);
+        const ability = getCell(`${SHEET_MAPPING.effect.abilityCol}${row}`);
+        const difficulty = getCell(`${SHEET_MAPPING.effect.difficultyCol}${row}`);
+        const target = getCell(`${SHEET_MAPPING.effect.targetCol}${row}`);
+        const range = getCell(`${SHEET_MAPPING.effect.rangeCol}${row}`);
+        const erosion = getCell(`${SHEET_MAPPING.effect.erosionCol}${row}`);
+        const restriction = getCell(`${SHEET_MAPPING.effect.restrictionCol}${row}`);
+        const effect = getCell(`${SHEET_MAPPING.effect.effectCol}${row}`);
+        
+        effectList.push({
+          name: name.trim(),
+          currentLevel,
+          maxLevel,
+          timing: timing || '',
+          ability: ability || '',
+          difficulty: difficulty || '',
+          target: target || '',
+          range: range || '',
+          erosion: erosion || '',
+          restriction: restriction || '',
+          effect: effect || ''
+        });
+      }
+      
+      return effectList;
+    } catch (error) {
+      console.error('이펙트 읽기 오류:', error.message);
+      return [];
+    }
+  }
+
+  /**
    * 시트에서 콤보 목록 읽기
    * @param {string} spreadsheetId - 스프레드시트 ID
    * @param {string} sheetName - 시트 이름
