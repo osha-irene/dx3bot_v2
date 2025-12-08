@@ -25,6 +25,7 @@ module.exports = {
   // Discord 설정
   discord: {
     token: process.env.DISCORD_BOT_TOKEN,
+    clientId: process.env.DISCORD_CLIENT_ID || null,
     botOwnerId: process.env.BOT_OWNER_ID || null
   },
 

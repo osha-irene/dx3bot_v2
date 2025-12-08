@@ -113,7 +113,7 @@ const SHEET_MAPPING = {
   
   // 방어구
   armor: {
-    startRow: 99,
+    startRow: 100,
     endRow: 104,
     nameCol: 'B',          // 이름
     typeCol: 'H',          // 종별

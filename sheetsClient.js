@@ -657,6 +657,8 @@ class SheetsClient {
    */
   async readEffects(spreadsheetId, sheetName = null) {
     try {
+      console.log(`📊 [이펙트 읽기] 시작 - 시트: ${sheetName || '기본'}`);
+      
       const range = sheetName ? `'${sheetName}'!A1:Z200` : 'A1:Z200';
       const response = await this.sheets.spreadsheets.values.get({
         spreadsheetId,
@@ -664,6 +666,7 @@ class SheetsClient {
       });
       
       const rows = response.data.values || [];
+      console.log(`📊 [이펙트 읽기] 전체 행 수: ${rows.length}`);
       
       const colToIndex = (col) => {
         let index = 0;
@@ -684,39 +687,51 @@ class SheetsClient {
       const effectList = [];
       const { rows: effectRows } = SHEET_MAPPING.effect;
       
+      console.log(`📊 [이펙트 읽기] 확인할 행: ${effectRows.join(', ')}`);
+      
       for (let row of effectRows) {
         const name = getCell(`${SHEET_MAPPING.effect.nameCol}${row}`);
-        if (!name || !name.trim()) continue;
         
-        const currentLevel = parseInt(getCell(`${SHEET_MAPPING.effect.currentLevelCol}${row}`)) || 0;
-        const maxLevel = parseInt(getCell(`${SHEET_MAPPING.effect.maxLevelCol}${row}`)) || 0;
-        const timing = getCell(`${SHEET_MAPPING.effect.timingCol}${row}`);
-        const ability = getCell(`${SHEET_MAPPING.effect.abilityCol}${row}`);
-        const difficulty = getCell(`${SHEET_MAPPING.effect.difficultyCol}${row}`);
-        const target = getCell(`${SHEET_MAPPING.effect.targetCol}${row}`);
-        const range = getCell(`${SHEET_MAPPING.effect.rangeCol}${row}`);
-        const erosion = getCell(`${SHEET_MAPPING.effect.erosionCol}${row}`);
-        const restriction = getCell(`${SHEET_MAPPING.effect.restrictionCol}${row}`);
-        const effect = getCell(`${SHEET_MAPPING.effect.effectCol}${row}`);
-        
-        effectList.push({
-          name: name.trim(),
-          currentLevel,
-          maxLevel,
-          timing: timing || '',
-          ability: ability || '',
-          difficulty: difficulty || '',
-          target: target || '',
-          range: range || '',
-          erosion: erosion || '',
-          restriction: restriction || '',
-          effect: effect || ''
-        });
+        if (name && name.trim()) {
+          console.log(`✅ [이펙트 읽기] ${row}행: ${name}`);
+          
+          const currentLevel = parseInt(getCell(`${SHEET_MAPPING.effect.currentLevelCol}${row}`)) || 0;
+          const maxLevel = parseInt(getCell(`${SHEET_MAPPING.effect.maxLevelCol}${row}`)) || 0;
+          const timing = getCell(`${SHEET_MAPPING.effect.timingCol}${row}`);
+          const ability = getCell(`${SHEET_MAPPING.effect.abilityCol}${row}`);
+          const difficulty = getCell(`${SHEET_MAPPING.effect.difficultyCol}${row}`);
+          const target = getCell(`${SHEET_MAPPING.effect.targetCol}${row}`);
+          const range = getCell(`${SHEET_MAPPING.effect.rangeCol}${row}`);
+          const erosion = getCell(`${SHEET_MAPPING.effect.erosionCol}${row}`);
+          const restriction = getCell(`${SHEET_MAPPING.effect.restrictionCol}${row}`);
+          const effect = getCell(`${SHEET_MAPPING.effect.effectCol}${row}`);
+          
+          console.log(`   - 현재Lv: ${currentLevel}, 최대Lv: ${maxLevel}`);
+          console.log(`   - 타이밍: ${timing}, 기능: ${ability}`);
+          
+          effectList.push({
+            name: name.trim(),
+            currentLevel,
+            maxLevel,
+            timing: timing || '',
+            ability: ability || '',
+            difficulty: difficulty || '',
+            target: target || '',
+            range: range || '',
+            erosion: erosion || '',
+            restriction: restriction || '',
+            effect: effect || ''
+          });
+        } else {
+          console.log(`⏭️ [이펙트 읽기] ${row}행: 비어있음`);
+        }
       }
       
+      console.log(`📊 [이펙트 읽기] 총 ${effectList.length}개 읽음`);
       return effectList;
     } catch (error) {
-      console.error('이펙트 읽기 오류:', error.message);
+      console.error('❌ [이펙트 읽기 오류]:', error.message);
+      console.error(error.stack);
       return [];
     }
   }

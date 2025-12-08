@@ -269,6 +269,96 @@ class SheetCommands {
     this.db.setUserSheet(serverId, userId, null);
     return message.reply(formatSuccess('시트 연동이 해제되었습니다.'));
   }
+
+  /**
+   * 슬래시 커맨드용 래퍼 함수들
+   */
+  async registerSheet(interaction, url) {
+    const serverId = interaction.guild.id;
+    const userId = interaction.user.id;
+    
+    const urlMatch = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
+    if (!urlMatch) {
+      return { success: false, message: '올바른 Google Sheets URL이 아닙니다.' };
+    }
+    
+    const spreadsheetId = urlMatch[1];
+    
+    if (!this.sheets) {
+      return { success: false, message: 'Google Sheets 기능이 비활성화되어 있습니다.' };
+    }
+    
+    try {
+      // 시트 탭 선택
+      const tabs = await this.sheets.listTabs(spreadsheetId);
+      
+      if (tabs.length === 0) {
+        return { success: false, message: '시트에 탭이 없습니다.' };
+      }
+      
+      let sheetName = tabs[0].title;
+      
+      if (tabs.length > 1) {
+        console.log(`여러 탭 발견, 첫 번째 탭 사용: ${sheetName}`);
+      }
+      
+      // 캐릭터 데이터 읽기
+      const characterData = await this.sheets.readFullCharacter(spreadsheetId, sheetName);
+      
+      if (!characterData || !characterData.characterName) {
+        return { success: false, message: '시트에서 캐릭터 데이터를 읽을 수 없습니다.' };
+      }
+      
+      // 🆕 캐릭터별로 시트 정보 저장
+      this.db.setCharacterSheet(serverId, userId, characterData.characterName, spreadsheetId, sheetName);
+      this.db.setCharacter(serverId, userId, characterData.characterName, characterData);
+      this.db.setActiveCharacter(serverId, userId, characterData.characterName);
+      
+      // 하위 호환 (기존 방식도 유지)
+      this.db.setUserSheet(serverId, userId, `${spreadsheetId}::${sheetName}`);
+      
+      return { 
+        success: true, 
+        message: `✅ ${characterData.characterName} 시트 등록 완료!\n이제 \`!지정 "${characterData.characterName}"\` 명령어로 언제든 이 캐릭터로 전환할 수 있습니다.`,
+        characterName: characterData.characterName
+      };
+      
+    } catch (error) {
+      console.error('시트 등록 오류:', error);
+      return { success: false, message: `시트 등록 실패: ${error.message}` };
+    }
+  }
+
+  async syncSheet(interaction) {
+    const serverId = interaction.guild.id;
+    const userId = interaction.user.id;
+    
+    const sheetInfo = this.db.getUserSheet(serverId, userId);
+    
+    if (!sheetInfo) {
+      return { success: false, message: '등록된 시트가 없습니다.' };
+    }
+    
+    try {
+      const characterData = await this.sheets.readFullCharacter(sheetInfo.spreadsheetId, sheetInfo.sheetName);
+      
+      if (!characterData || !characterData.characterName) {
+        return { success: false, message: '시트에서 데이터를 읽을 수 없습니다.' };
+      }
+      
+      this.db.setCharacter(serverId, userId, characterData.characterName, characterData);
+      this.db.setActiveCharacter(serverId, userId, characterData.characterName);
+      
+      return { 
+        success: true, 
+        message: `✅ ${characterData.characterName} 시트 동기화 완료!`
+      };
+      
+    } catch (error) {
+      console.error('시트 동기화 오류:', error);
+      return { success: false, message: `동기화 실패: ${error.message}` };
+    }
+  }
 }
 
 module.exports = SheetCommands;

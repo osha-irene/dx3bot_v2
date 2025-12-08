@@ -16,10 +16,17 @@ class CharacterCommands {
   async getActiveCharacterData(message) {
     const serverId = message.guild.id;
     const userId = message.author.id;
-    const sheetInfo = this.db.getUserSheet(serverId, userId);
+    
+    // 🆕 먼저 활성 캐릭터 확인
+    const activeCharName = this.db.getActiveCharacter(serverId, userId);
+    if (!activeCharName) return null;
+    
+    // 🆕 활성 캐릭터의 시트 정보 확인
+    const sheetInfo = this.db.getCharacterSheet(serverId, userId, activeCharName);
     
     if (sheetInfo && sheetInfo.spreadsheetId && this.sheets) {
       try {
+        console.log(`📊 [getActiveCharacterData] 시트에서 ${activeCharName} 읽기 중...`);
         const data = await this.sheets.readFullCharacter(sheetInfo.spreadsheetId, sheetInfo.sheetName);
         if (data && data.characterName) {
           // 🔥 DB에 저장된 emoji 보존
@@ -37,6 +44,16 @@ class CharacterCommands {
             data.effects = [];
           }
           
+          // 🔥 콤보 목록 읽기
+          try {
+            const combos = await this.sheets.readCombos(sheetInfo.spreadsheetId, sheetInfo.sheetName);
+            data.combos = combos.map(c => c.name); // 이름만 저장
+          } catch (error) {
+            console.error('콤보 읽기 오류:', error);
+            data.combos = [];
+          }
+          
+          console.log(`✅ [getActiveCharacterData] ${data.characterName} 시트 읽기 완료`);
           return { name: data.characterName, data, fromSheet: true, spreadsheetId: sheetInfo.spreadsheetId, sheetName: sheetInfo.sheetName, serverId, userId };
         }
       } catch (error) {
@@ -44,10 +61,10 @@ class CharacterCommands {
       }
     }
 
-    const activeCharName = this.db.getActiveCharacter(serverId, userId);
-    if (!activeCharName) return null;
+    // 시트 연동이 안 되어 있으면 DB에서 가져오기
     const data = this.db.getCharacter(serverId, userId, activeCharName);
     if (!data) return null;
+    console.log(`💾 [getActiveCharacterData] ${activeCharName} DB에서 읽기`);
     return { name: activeCharName, data, fromSheet: false, serverId, userId };
   }
 
@@ -88,13 +105,31 @@ class CharacterCommands {
     if (args.length === 0) return message.channel.send(formatError('사용법: `!지정 "캐릭터 이름"`'));
     
     const characterName = extractName(args.join(' '));
-    const characterData = this.db.getCharacter(serverId, userId, characterName);
+    let characterData = this.db.getCharacter(serverId, userId, characterName);
     if (!characterData) return message.channel.send(formatError(`캐릭터 "${characterName}"를 찾을 수 없습니다.`));
+    
+    // 🆕 시트 연동 캐릭터면 자동으로 시트 동기화
+    const sheetInfo = this.db.getCharacterSheet(serverId, userId, characterName);
+    if (sheetInfo && this.sheets) {
+      try {
+        console.log(`🔄 [지정] 시트 연동 캐릭터 발견: ${characterName}, 시트 동기화 중...`);
+        const updatedData = await this.sheets.readFullCharacter(sheetInfo.spreadsheetId, sheetInfo.sheetName);
+        if (updatedData && updatedData.characterName) {
+          characterData = updatedData;
+          this.db.setCharacter(serverId, userId, characterName, characterData);
+          console.log(`✅ [지정] 시트 동기화 완료`);
+        }
+      } catch (error) {
+        console.error(`❌ [지정] 시트 동기화 실패:`, error.message);
+        // 동기화 실패해도 기존 데이터로 진행
+      }
+    }
     
     this.db.setActiveCharacter(serverId, userId, characterName);
     const emoji = characterData.emoji || '✅';
     const codeName = characterData.codeName || '';
-    const replyMsg = await message.reply(`${emoji} **${characterName}** ${codeName ? `「${codeName}」` : ''} 활성화!\n💚 HP: ${characterData.HP || 0} | 🔴 침식률: ${characterData.침식률 || 0}`);
+    const sheetIcon = sheetInfo ? '📊 ' : '';
+    const replyMsg = await message.reply(`${emoji} **${characterName}** ${codeName ? `「${codeName}」` : ''} 활성화!${sheetInfo ? ' (시트 연동 ✨)' : ''}\n💚 HP: ${characterData.HP || 0} | 🔴 침식률: ${characterData.침식률 || 0}`);
     setTimeout(() => { replyMsg.delete().catch(() => {}); message.delete().catch(() => {}); }, 5000);
     await this.updateStatusPanel(message.guild, serverId);
   }
@@ -127,31 +162,62 @@ class CharacterCommands {
     let forumChannelId = this.db.getSheetForumChannel(serverId);
     let forumChannel = null;
     
+    // 기존 포럼 채널 찾기
     if (forumChannelId) {
       try {
         forumChannel = await message.guild.channels.fetch(forumChannelId);
-        if (forumChannel.type !== 15) { forumChannel = null; forumChannelId = null; }
+        if (forumChannel.type !== 15) { 
+          forumChannel = null; 
+          forumChannelId = null; 
+        }
       } catch (error) {
-        forumChannel = null; forumChannelId = null;
+        forumChannel = null; 
+        forumChannelId = null;
       }
     }
     
+    // 포럼이 없으면 찾거나 생성
     if (!forumChannel) {
-      const existingForum = message.guild.channels.cache.find(ch => ch.type === 15 && (ch.name === '캐릭터-시트' || ch.name === 'character-sheets'));
+      const existingForum = message.guild.channels.cache.find(ch => 
+        ch.type === 15 && (ch.name === '캐릭터-시트' || ch.name === 'character-sheets')
+      );
+      
       if (existingForum) {
         forumChannel = existingForum;
         this.db.setSheetForumChannel(serverId, existingForum.id);
         console.log(`✅ [CHECK] 기존 포럼 채널 찾음: ${existingForum.name}`);
       } else {
+        // 포럼 생성 시도
         try {
-          forumChannel = await message.guild.channels.create({ name: '캐릭터-시트', type: 15, topic: '캐릭터 시트 자동 관리' });
+          forumChannel = await message.guild.channels.create({ 
+            name: '캐릭터-시트', 
+            type: 15, 
+            topic: '캐릭터 시트 자동 관리' 
+          });
           this.db.setSheetForumChannel(serverId, forumChannel.id);
           console.log(`✅ [CHECK] 새 포럼 채널 생성: ${forumChannel.name}`);
         } catch (error) {
           console.error('❌ [CHECK] 포럼 생성 오류:', error);
-          return await this.checkSheetNormal(message, activeChar);
+          
+          // 권한 부족 시 안내 메시지
+          return message.reply(
+            `❌ **포럼 채널 생성 실패**\n\n` +
+            `봇에게 다음 권한이 필요합니다:\n` +
+            `• 채널 관리하기 (Manage Channels)\n` +
+            `• 스레드 만들기 (Create Public Threads)\n` +
+            `• 메시지 보내기 (Send Messages)\n\n` +
+            `**해결 방법:**\n` +
+            `1. 서버 설정 → 역할 → DX3bot 역할에 위 권한 부여\n` +
+            `2. 또는 직접 "캐릭터-시트" 포럼 채널을 만들어주세요!\n` +
+            `   (채널 만들기 → 포럼 선택)`
+          );
         }
       }
+    }
+    
+    // 포럼이 정상적으로 확보되었는지 확인
+    if (!forumChannel) {
+      return message.reply(formatError('포럼 채널을 찾을 수 없습니다. 서버 관리자에게 문의하세요.'));
     }
     
     const sheetContent = this.generateSheetContent(activeChar);
@@ -160,15 +226,62 @@ class CharacterCommands {
     console.log(`🔍 [CHECK] 기존 스레드 정보:`, threadInfo);
     
     try {
+      // 기존 스레드 업데이트
       if (threadInfo && threadInfo.threadId) {
         console.log(`🔍 [CHECK] 기존 스레드 업데이트 시도...`);
         try {
           const thread = await forumChannel.threads.fetch(threadInfo.threadId);
           if (thread) {
+            // 2000자 제한 처리
+            let firstMessageContent = sheetContent;
+            let additionalMessages = [];
+            
+            if (sheetContent.length > 2000) {
+              console.log(`⚠️ [CHECK] 시트 내용이 2000자 초과 (${sheetContent.length}자), 분할 중...`);
+              const chunks = [];
+              let currentChunk = '';
+              const lines = sheetContent.split('\n');
+              
+              for (const line of lines) {
+                if ((currentChunk + line + '\n').length > 1900) {
+                  chunks.push(currentChunk);
+                  currentChunk = line + '\n';
+                } else {
+                  currentChunk += line + '\n';
+                }
+              }
+              if (currentChunk) chunks.push(currentChunk);
+              
+              firstMessageContent = chunks[0];
+              additionalMessages = chunks.slice(1);
+              console.log(`✅ [CHECK] ${chunks.length}개 청크로 분할 완료`);
+            }
+            
+            // 첫 메시지 수정
             const sheetMessage = await thread.messages.fetch(threadInfo.messageId);
-            await sheetMessage.edit(sheetContent);
+            await sheetMessage.edit(firstMessageContent);
+            console.log(`✅ [CHECK] 첫 메시지 수정 완료`);
+            
+            // 기존 추가 메시지 삭제
+            const allMessages = await thread.messages.fetch({ limit: 100 });
+            const oldMessages = allMessages.filter(m => 
+              m.author.id === message.client.user.id && m.id !== threadInfo.messageId
+            );
+            for (const msg of oldMessages.values()) {
+              await msg.delete().catch(() => {});
+            }
+            console.log(`✅ [CHECK] 기존 추가 메시지 ${oldMessages.size}개 삭제 완료`);
+            
+            // 새 추가 메시지 전송
+            for (let i = 0; i < additionalMessages.length; i++) {
+              await thread.send(additionalMessages[i]);
+              console.log(`✅ [CHECK] 추가 메시지 ${i + 1}/${additionalMessages.length} 전송 완료`);
+            }
+            
             await message.delete().catch(() => {});
-            const confirmMsg = await message.channel.send(`${activeChar.data.emoji || '📋'} **${characterName}** 시트 업데이트!\n📍 <#${thread.id}>`);
+            const confirmMsg = await message.channel.send(
+              `${activeChar.data.emoji || '📋'} **${characterName}** 시트 업데이트!\n📍 <#${thread.id}>`
+            );
             setTimeout(() => confirmMsg.delete().catch(() => {}), 5000);
             console.log(`✅ [CHECK] 기존 스레드 업데이트 완료`);
             console.log(`🔍 [CHECK] ===== 시트확인 끝 =====\n`);
@@ -179,46 +292,79 @@ class CharacterCommands {
         }
       }
       
+      // 새 스레드 생성
       console.log(`🔍 [CHECK] 새 스레드 생성 중...`);
       const emoji = activeChar.data.emoji || '📋';
       const codeName = activeChar.data.codeName || '';
       const threadName = `${emoji} ${characterName} ${codeName ? `「${codeName}」` : ''}`;
       
       console.log(`🔍 [CHECK] 스레드 이름: ${threadName}`);
-      const thread = await forumChannel.threads.create({ name: threadName.substring(0, 100), message: { content: sheetContent } });
+      
+      // 2000자 제한 처리
+      let firstMessageContent = sheetContent;
+      let additionalMessages = [];
+      
+      if (sheetContent.length > 2000) {
+        console.log(`⚠️ [CHECK] 시트 내용이 2000자 초과 (${sheetContent.length}자), 분할 중...`);
+        const chunks = [];
+        let currentChunk = '';
+        const lines = sheetContent.split('\n');
+        
+        for (const line of lines) {
+          if ((currentChunk + line + '\n').length > 1900) {
+            chunks.push(currentChunk);
+            currentChunk = line + '\n';
+          } else {
+            currentChunk += line + '\n';
+          }
+        }
+        if (currentChunk) chunks.push(currentChunk);
+        
+        firstMessageContent = chunks[0];
+        additionalMessages = chunks.slice(1);
+        console.log(`✅ [CHECK] ${chunks.length}개 청크로 분할 완료`);
+      }
+      
+      const thread = await forumChannel.threads.create({ 
+        name: threadName.substring(0, 100), 
+        message: { content: firstMessageContent } 
+      });
       console.log(`✅ [CHECK] 스레드 생성 완료: ${thread.id}`);
+      
+      // 추가 메시지 전송
+      for (let i = 0; i < additionalMessages.length; i++) {
+        await thread.send(additionalMessages[i]);
+        console.log(`✅ [CHECK] 추가 메시지 ${i + 1}/${additionalMessages.length} 전송 완료`);
+      }
       
       const messages = await thread.messages.fetch({ limit: 1 });
       const firstMessage = messages.first();
       console.log(`✅ [CHECK] 첫 메시지 ID: ${firstMessage.id}`);
       
       console.log(`🔍 [CHECK] DB에 저장 중...`);
-      console.log(`   - serverId: ${serverId}`);
-      console.log(`   - userId: ${userId}`);
-      console.log(`   - characterName: ${characterName}`);
-      console.log(`   - threadId: ${thread.id}`);
-      console.log(`   - messageId: ${firstMessage.id}`);
-      
       this.db.setCharacterSheetThread(serverId, userId, characterName, thread.id, firstMessage.id);
       console.log(`✅ [CHECK] DB 저장 완료!`);
       
-      // 저장 확인
-      const saved = this.db.getCharacterSheetThread(serverId, userId, characterName);
-      console.log(`🔍 [CHECK] DB 저장 확인:`, saved);
-      
       await message.delete().catch(() => {});
-      const confirmMsg = await message.channel.send(`${emoji} **${characterName}** 시트 스레드 생성!\n📍 <#${thread.id}>`);
+      const confirmMsg = await message.channel.send(
+        `${emoji} **${characterName}** 시트 스레드 생성!\n📍 <#${thread.id}>`
+      );
       setTimeout(() => confirmMsg.delete().catch(() => {}), 5000);
       console.log(`🔍 [CHECK] ===== 시트확인 끝 =====\n`);
+      
     } catch (error) {
       console.error('❌ [CHECK] 포럼 스레드 오류:', error);
       console.log(`🔍 [CHECK] ===== 시트확인 끝 (오류) =====\n`);
-      return await this.checkSheetNormal(message, activeChar);
+      
+      return message.reply(
+        `❌ **포럼 스레드 생성/업데이트 실패**\n\n` +
+        `오류: ${error.message}\n\n` +
+        `봇에게 다음 권한이 있는지 확인해주세요:\n` +
+        `• 스레드 만들기\n` +
+        `• 메시지 보내기\n` +
+        `• 메시지 관리하기`
+      );
     }
-  }
-
-  async checkSheetNormal(message, activeChar) {
-    return message.reply(this.generateSheetContent(activeChar));
   }
 
   generateSheetContent(activeChar) {
@@ -269,23 +415,23 @@ class CharacterCommands {
       for (let l of d.lois) {
         if (l.isTitus) {
           // 타이터스: 옅은 색 + 취소선
-          r += `-# > ㆍ ~~**${l.name}**~~ | ~~${l.pEmotion}~~ / ~~${l.nEmotion}~~ | ~~${l.description}~~\n`;
+          r += `-# ㆍ~~**${l.name}**~~ | ~~${l.pEmotion}~~ / ~~${l.nEmotion}~~ | ~~${l.description}~~\n`;
         } else {
-          r += `> ㆍ **${l.name}** | ${l.pEmotion} / ${l.nEmotion} | ${l.description}\n`;
+          r += `ㆍ**${l.name}** | ${l.pEmotion} / ${l.nEmotion} | ${l.description}\n`;
         }
       }
     }
     
     if (d.memory && d.memory.length > 0) {
       r += `\n${emoji}  **메모리**\n`;
-      for (let m of d.memory) r += `> ㆍ **${m.name}** | ${m.emotion} | ${m.description}\n`;
+      for (let m of d.memory) r += `ㆍ**${m.name}** | ${m.emotion} | ${m.description}\n`;
     }
     
     if (d.weapons && d.weapons.length > 0) {
       r += `\n${emoji}  **무기**\n`;
       for (let w of d.weapons) {
-        r += `> ㆍ **${w.name}**\n`;
-        let details = `> 　　`;
+        r += `ㆍ**${w.name}**\n`;
+        let details = `　　`;
         if (w.type) details += `${w.type}`;
         if (w.ability) details += ` | ${w.ability}`;
         if (w.range) details += ` | ${w.range}`;
@@ -293,29 +439,29 @@ class CharacterCommands {
         if (w.attack) details += ` | 공격력 ${w.attack}`;
         if (w.guard) details += ` | 가드 ${w.guard}`;
         r += `-# ${details}\n`;
-        if (w.description) r += `-# > 　${w.description}\n`;
+        if (w.description) r += `-# 　${w.description}\n`;
       }
     }
     
     if (d.armor && d.armor.length > 0) {
       r += `\n${emoji}  **방어구**\n`;
       for (let a of d.armor) {
-        r += `> ㆍ **${a.name}**\n`;
-        let details = `> 　　`;
+        r += `ㆍ**${a.name}**\n`;
+        let details = `　　`;
         if (a.type) details += `${a.type}`;
         if (a.dodge) details += ` | 닷지 ${a.dodge}`;
         if (a.action) details += ` | 행동치 ${a.action}`;
         if (a.defense) details += ` | 장갑 ${a.defense}`;
         r += `-# ${details}\n`;
-        if (a.description) r += `-# > 　${a.description}\n`;
+        if (a.description) r += `-# 　${a.description}\n`;
       }
     }
     
     if (d.vehicles && d.vehicles.length > 0) {
       r += `\n${emoji}  **비클**\n`;
       for (let v of d.vehicles) {
-        r += `> ㆍ **${v.name}**\n`;
-        let details = `> 　　`;
+        r += `ㆍ**${v.name}**\n`;
+        let details = `　　`;
         if (v.type) details += `${v.type}`;
         if (v.ability) details += ` | ${v.ability}`;
         if (v.attack) details += ` | 공격력 ${v.attack}`;
@@ -323,19 +469,19 @@ class CharacterCommands {
         if (v.defense) details += ` | 장갑 ${v.defense}`;
         if (v.move) details += ` | 이동 ${v.move}`;
         r += `-# ${details}\n`;
-        if (v.description) r += `-# > 　${v.description}\n`;
+        if (v.description) r += `-# 　${v.description}\n`;
       }
     }
     
     if (d.items && d.items.length > 0) {
       r += `\n${emoji}  **아이템**\n`;
       for (let i of d.items) {
-        r += `> ㆍ **${i.name}**\n`;
-        let details = `> 　　`;
+        r += `ㆍ**${i.name}**\n`;
+        let details = `　　`;
         if (i.type) details += `${i.type}`;
         if (i.ability) details += ` | ${i.ability}`;
         r += `-# ${details}\n`;
-        if (i.description) r += `-# > 　${i.description}\n`;
+        if (i.description) r += `-# 　${i.description}\n`;
       }
     }
     
@@ -348,30 +494,49 @@ class CharacterCommands {
       
       r += `\n${emoji}  **이펙트** (침식률 ${currentErosion}, Lv ${effectLevel}${isKigenShu ? ' 기원종' : ''})\n`;
       
+      let effectLine = '';
+      let effectsInLine = 0;
+      const maxPerLine = 4; // 한 줄에 최대 4개
+      
       for (let e of d.effects) {
-        // 현재 레벨에 해당하는 이펙트만 표시하거나 레벨 정보 표시
+        // Lv 0/0인 빈 이펙트 제외
+        if (e.maxLevel === 0 && e.currentLevel === 0) continue;
+        
+        let effectText = '';
         if (e.currentLevel !== undefined) {
-          // 시트에서 읽어온 이펙트 (레벨 정보 있음)
-          r += `> ㆍ **${e.name}** Lv ${e.currentLevel}/${e.maxLevel}\n`;
-          
-          // 효과 내용에서 [LV+N] 치환
-          let effectText = e.effect || '';
-          effectText = effectText.replace(/\[LV\+(\d+)\]/gi, (match, bonus) => {
-            return `[${e.currentLevel + parseInt(bonus)}]`;
-          });
-          effectText = effectText.replace(/\[LV\]/gi, `[${e.currentLevel}]`);
-          
-          let details = `-# > 　　`;
-          if (e.timing) details += `${e.timing}`;
-          if (e.ability) details += ` | ${e.ability}`;
-          if (e.target) details += ` | ${e.target}`;
-          if (e.range) details += ` | ${e.range}`;
-          r += `${details}\n`;
-          r += `-# > 　${effectText}\n`;
+          // 시트에서 읽어온 이펙트
+          effectText = `${e.name} Lv ${e.currentLevel}`;
         } else {
           // DB에 저장된 간단한 이펙트
-          r += `> ㆍ **${e.name}** | ${e.description}\n`;
+          effectText = `${e.name}`;
         }
+        
+        // 4개마다 줄바꿈
+        if (effectsInLine >= maxPerLine) {
+          r += effectLine + '\n';
+          effectLine = '';
+          effectsInLine = 0;
+        }
+        
+        if (effectsInLine > 0) {
+          effectLine += ' | ';
+        }
+        effectLine += effectText;
+        effectsInLine++;
+      }
+      
+      // 마지막 줄 추가
+      if (effectsInLine > 0) {
+        r += effectLine + '\n';
+      }
+    }
+    
+    // 콤보 목록 (시트에서 읽기)
+    if (activeChar.fromSheet && activeChar.spreadsheetId && d.combos && d.combos.length > 0) {
+      r += `\n${emoji}  **콤보**\n`;
+      
+      for (let combo of d.combos) {
+        r += `ㆍ**${combo}**\n`;
       }
     }
     
@@ -458,6 +623,88 @@ class CharacterCommands {
     activeChar.data[attribute] = value;
     this.db.setCharacter(activeChar.serverId, activeChar.userId, activeChar.name, activeChar.data);
     return message.channel.send(formatSuccess(`**${activeChar.name}**의 **${attribute}**이(가) **"${value}"**(으)로 설정되었습니다.`));
+  }
+
+  /**
+   * !컬러 [HEX코드] - Embed 컬러 설정
+   */
+  async setEmbedColor(message, args) {
+    if (args.length === 0) {
+      return message.channel.send('❌ 사용법: `!컬러 [HEX코드]`\n예시: `!컬러 FF5733` 또는 `!컬러 #FF5733`');
+    }
+
+    const activeChar = await this.getActiveCharacterData(message);
+    if (!activeChar) {
+      return message.channel.send(formatError('활성화된 캐릭터가 없습니다. `!지정 [캐릭터 이름]` 명령어로 캐릭터를 지정해주세요.'));
+    }
+
+    let colorCode = args[0].replace('#', '').toUpperCase();
+    
+    // HEX 코드 검증
+    if (!/^[0-9A-F]{6}$/.test(colorCode)) {
+      return message.channel.send(formatError('올바른 HEX 색상 코드를 입력해주세요. (예: FF5733 또는 #FF5733)'));
+    }
+
+    activeChar.data.embedColor = colorCode;
+    this.db.setCharacter(activeChar.serverId, activeChar.userId, activeChar.name, activeChar.data);
+
+    // 미리보기 Embed 생성
+    const { EmbedBuilder } = require('discord.js');
+    const previewEmbed = new EmbedBuilder()
+      .setColor(parseInt(colorCode, 16))
+      .setTitle(`${activeChar.name}의 Embed 컬러`)
+      .setDescription(`컬러 코드: #${colorCode}\n이제 콤보와 이펙트 Embed에 이 색상이 적용됩니다!`);
+
+    return message.channel.send({ embeds: [previewEmbed] });
+  }
+
+  /**
+   * !콤보확인 - 현재 캐릭터의 콤보 목록 표시
+   */
+  async checkCombos(message) {
+    const activeChar = await this.getActiveCharacterData(message);
+    if (!activeChar) {
+      return message.reply(formatError('활성화된 캐릭터가 없습니다. `!지정 [캐릭터 이름]` 명령어로 캐릭터를 지정해주세요.'));
+    }
+
+    // 시트 연동 확인
+    if (!activeChar.fromSheet || !activeChar.spreadsheetId || !this.sheets) {
+      return message.reply(formatError('콤보 기능은 시트 연동 캐릭터만 사용할 수 있습니다. `!시트등록`을 먼저 해주세요.'));
+    }
+
+    try {
+      // 시트에서 콤보 읽기
+      const combos = await this.sheets.readCombos(activeChar.spreadsheetId, activeChar.sheetName);
+      
+      if (!combos || combos.length === 0) {
+        return message.channel.send(formatError('등록된 콤보가 없습니다. 시트의 196~237행을 확인해주세요.'));
+      }
+
+      const emoji = activeChar.data.emoji || '⚔️';
+      const currentErosion = activeChar.data.침식률 || 0;
+      
+      let response = `${emoji}  **${activeChar.name}의 콤보 목록** (침식률 ${currentErosion})\n\n`;
+      
+      for (let combo of combos) {
+        const has99 = combo['99↓'] && combo['99↓'].effectList;
+        const has100 = combo['100↑'] && combo['100↑'].effectList;
+        
+        if (has99 || has100) {
+          response += `> **${combo.name}**\n`;
+          if (has99) response += `> 　99↓ 침식 ${combo.erosion || '-'}\n`;
+          if (has100) response += `> 　100↑ 침식 ${combo.erosion || '-'}\n`;
+          response += `>\n`;
+        }
+      }
+      
+      response += `\n💡 콤보 사용: \`!@콤보이름\``;
+      
+      return message.channel.send(response);
+      
+    } catch (error) {
+      console.error('콤보 확인 오류:', error);
+      return message.channel.send(formatError('콤보를 불러오는 중 오류가 발생했습니다.'));
+    }
   }
 
   async dlois(message, args) {

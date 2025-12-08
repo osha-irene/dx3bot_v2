@@ -8,6 +8,7 @@ const config = require('./config');
 const Database = require('./database');
 const SheetsClient = require('./sheetsClient');
 const CommandHandler = require('./commandHandler');
+const SlashCommandHandler = require('./slashCommandHandler');
 
 // 디스코드 클라이언트 초기화
 const client = new Client({
@@ -38,6 +39,15 @@ if (config.googleSheets.enabled) {
 
 // 명령어 핸들러 초기화
 const commandHandler = new CommandHandler(database, sheetsClient, client);
+
+// 슬래시 커맨드 핸들러 초기화
+const slashCommandHandler = new SlashCommandHandler(
+  database, 
+  sheetsClient, 
+  commandHandler.characterCmd,
+  commandHandler.sheetCmd,
+  commandHandler.combatCmd
+);
 
 // 봇 준비 이벤트
 client.once(Events.ClientReady, readyClient => {
@@ -87,6 +97,11 @@ client.on(Events.MessageCreate, async (message) => {
 
 // 버튼 인터랙션 처리
 client.on(Events.InteractionCreate, async (interaction) => {
+  // 슬래시 커맨드 처리
+  if (interaction.isChatInputCommand()) {
+    return await slashCommandHandler.handle(interaction);
+  }
+  
   if (!interaction.isButton()) return;
 
   // 콤보 주사위 굴림

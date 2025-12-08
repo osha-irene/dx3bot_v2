@@ -415,40 +415,70 @@ class CombatCommands {
       // Embed 생성
       const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
       
+      // 🎨 개인별 컬러코드 사용
+      let embedColor;
+      if (activeChar.data.embedColor) {
+        console.log(`[콤보 컬러] 개인 컬러 발견: ${activeChar.data.embedColor}`);
+        embedColor = parseInt(activeChar.data.embedColor, 16);
+        console.log(`[콤보 컬러] 변환된 값: 0x${embedColor.toString(16).toUpperCase()}`);
+      } else {
+        console.log(`[콤보 컬러] 개인 컬러 없음, 기본값 사용 (침식률: ${currentErosion})`);
+        // 기본: 어두운 회색, 100 이상: 짙은 빨강
+        embedColor = currentErosion >= 100 ? 0x8B0000 : 0x2F3136;
+      }
+      
       const embed = new EmbedBuilder()
-        .setColor(currentErosion >= 100 ? 0xFF4444 : 0x4444FF)
-        .setTitle(`⚔ ${combo.name} (침식률 ${currentErosion}, ${version})`)
-        .setDescription(`${comboData.effectList || '효과 없음'}`)
-        .addFields(
-          { name: '📝 내용', value: comboData.content || '내용 없음', inline: false }
-        );
+        .setColor(embedColor)
+        .setTitle(`${version} ${combo.name}`)
+        .setDescription(comboData.effectList || '');
 
-      // 상세 정보 추가
-      let details = '';
-      if (combo.timing) details += `⏱ 타이밍: ${combo.timing}\n`;
-      if (combo.skill) details += `🎯 사용 기능: ${combo.skill}\n`;
-      if (combo.target) details += `👥 대상: ${combo.target}\n`;
-      if (combo.range) details += `📏 사정거리: ${combo.range}\n`;
-      if (combo.difficulty) details += `🎲 난이도: ${combo.difficulty}\n`;
-      if (combo.restriction) details += `⚠️ 제한: ${combo.restriction}\n`;
-      if (combo.erosion) details += `🔴 침식률: ${combo.erosion}\n`;
+      // 상세 정보 (한 줄로)
+      let detailsLine = '';
+      if (combo.timing) detailsLine += `${combo.timing}`;
+      if (combo.skill) detailsLine += ` / ${combo.skill}`;
+      if (combo.difficulty) detailsLine += ` / ${combo.difficulty}`;
+      if (combo.target) detailsLine += ` / ${combo.target}`;
+      if (combo.range) detailsLine += ` / ${combo.range}`;
+      if (combo.restriction) detailsLine += ` / ${combo.restriction}`;
       
-      if (details) embed.addFields({ name: '📋 상세 정보', value: details, inline: false });
+      if (detailsLine) {
+        embed.addFields({ 
+          name: '상세', 
+          value: detailsLine, 
+          inline: false 
+        });
+      }
 
-      // 효과 요약
-      let effects = '';
-      if (comboData.dice) effects += `🎲 다이스: +${comboData.dice}D\n`;
-      if (comboData.critical) effects += `💥 크리티컬: ${comboData.critical}\n`;
-      if (comboData.attack) effects += `⚔️ 공격력: +${comboData.attack}\n`;
+      // 효과 정보 (한 줄로)
+      let effectsLine = '';
+      if (comboData.dice) effectsLine += `다이스 ${comboData.dice}`;
+      if (comboData.critical) effectsLine += ` / 크리치 ${comboData.critical}`;
+      if (comboData.attack) effectsLine += ` / 공격력 ${comboData.attack}`;
+      if (combo.erosion) effectsLine += ` / 침식 ${combo.erosion}`;
       
-      if (effects) embed.addFields({ name: '✨ 효과', value: effects, inline: false });
+      if (effectsLine) {
+        embed.addFields({ 
+          name: '효과', 
+          value: effectsLine, 
+          inline: false 
+        });
+      }
+
+      // 내용
+      if (comboData.content) {
+        embed.addFields({ 
+          name: '내용', 
+          value: comboData.content, 
+          inline: false 
+        });
+      }
 
       // 침식률 경고
       let footerText = '';
       if (currentErosion >= 220) {
-        footerText = '⚠️ 침식률 220 이상: 더 강력한 콤보가 필요합니다!\n💡 시트의 다음 콤보 슬롯(202, 208, 214...)에 220↑ 조건을 추가하세요.';
+        footerText = '⚠ 침식률 220↑: 더 강력한 콤보가 필요합니다! 시트의 다음 슬롯(202, 208, 214...)에 220↑ 조건을 추가하세요.';
       } else if (currentErosion >= 160) {
-        footerText = '⚠️ 침식률 160 이상: 고레벨 콤보를 추가할 수 있습니다!\n💡 시트의 행 200, 206, 212... (N+4)에 160↑ 조건을 추가하세요.';
+        footerText = '⚠ 침식률 160↑: 고레벨 콤보를 추가할 수 있습니다! 시트의 행 200, 206, 212... (N+4)에 160↑ 조건을 추가하세요.';
       }
       if (footerText) embed.setFooter({ text: footerText });
 
@@ -457,11 +487,11 @@ class CombatCommands {
         .addComponents(
           new ButtonBuilder()
             .setCustomId(`combo_roll_${message.author.id}_${combo.skill}_${comboData.dice}_${comboData.critical}`)
-            .setLabel('🎲 주사위 굴리기')
+            .setLabel('주사위 굴리기')
             .setStyle(ButtonStyle.Success),
           new ButtonBuilder()
             .setCustomId('combo_cancel')
-            .setLabel('❌ 취소')
+            .setLabel('취소')
             .setStyle(ButtonStyle.Secondary)
         );
 
@@ -488,6 +518,122 @@ class CombatCommands {
       return message.channel.send(formatSuccess(`**${activeChar.name}**의 콤보 **"${comboName}"**가 삭제되었습니다.`));
     } else {
       return message.channel.send(formatError(`**${activeChar.name}**에게 **"${comboName}"** 콤보가 존재하지 않습니다.`));
+    }
+  }
+
+  /**
+   * ![이펙트 이름] - 이펙트 상세 정보 표시
+   */
+  async callEffect(message, effectName) {
+    const activeChar = await this.getActiveCharacterData(message);
+    if (!activeChar) {
+      return message.reply(formatError('활성화된 캐릭터가 없습니다. `!지정 ["캐릭터 이름"]` 명령어로 캐릭터를 지정해주세요.'));
+    }
+
+    // 시트 연동 확인
+    if (!activeChar.fromSheet || !activeChar.spreadsheetId || !this.sheets) {
+      return message.reply(formatError('이펙트 기능은 시트 연동 캐릭터만 사용할 수 있습니다. `!시트등록`을 먼저 해주세요.'));
+    }
+
+    try {
+      // 시트에서 이펙트 읽기
+      const effects = await this.sheets.readEffects(activeChar.spreadsheetId, activeChar.sheetName);
+      
+      // 띄어쓰기 무시하고 검색 (입력값과 이펙트명 모두 띄어쓰기 제거 후 비교)
+      const normalizedInput = effectName.replace(/\s+/g, '');
+      const effect = effects.find(e => e.name.replace(/\s+/g, '') === normalizedInput);
+
+      if (!effect) {
+        return message.channel.send(formatError(`이펙트 '${effectName}'을 찾을 수 없습니다. 시트의 164~193행을 확인해주세요.`));
+      }
+
+      const currentErosion = activeChar.data.침식률 || 0;
+      const isKigenShu = activeChar.data.dloisName && activeChar.data.dloisName.includes('기원종');
+      const { calculateEffectLevel } = require('../sheetsMapping');
+      const effectLevel = calculateEffectLevel(currentErosion, isKigenShu);
+
+      // Embed 생성
+      const { EmbedBuilder } = require('discord.js');
+      
+      // 🎨 개인별 컬러코드 사용
+      let embedColor;
+      if (activeChar.data.embedColor) {
+        console.log(`[이펙트 컬러] 개인 컬러 발견: ${activeChar.data.embedColor}`);
+        embedColor = parseInt(activeChar.data.embedColor, 16);
+        console.log(`[이펙트 컬러] 변환된 값: 0x${embedColor.toString(16).toUpperCase()}`);
+      } else {
+        console.log(`[이펙트 컬러] 개인 컬러 없음, 기본값 사용 (침식률: ${currentErosion})`);
+        // 기본: 어두운 회색, 100 이상: 짙은 빨강
+        embedColor = currentErosion >= 100 ? 0x8B0000 : 0x2F3136;
+      }
+      
+      // 침식률에 따른 이펙트 레벨 증가
+      let levelBonus = 0;
+      if (currentErosion >= 220) {
+        levelBonus = 3;
+      } else if (currentErosion >= 160) {
+        levelBonus = 2;
+      } else if (currentErosion >= 100) {
+        levelBonus = 1;
+      }
+      
+      // 🔥 타이틀 표시용: 기본 레벨 그대로
+      // 🔥 효과 계산용: 기본 레벨 + 보너스
+      const displayLevel = effect.currentLevel + levelBonus;
+      
+      // 효과 내용에서 [LV+N] 치환 (실제 레벨 적용)
+      let effectText = effect.effect || '';
+      effectText = effectText.replace(/\[LV\+(\d+)\]/gi, (match, bonus) => {
+        return `[${displayLevel + parseInt(bonus)}]`;
+      });
+      effectText = effectText.replace(/\[LV\]/gi, `[${displayLevel}]`);
+      
+      // 타이틀: 기본 레벨 + 보너스 표시
+      let titleText = `${effect.name} Lv ${effect.currentLevel}`;
+      if (levelBonus > 0) {
+        titleText += `+${levelBonus}`;
+      }
+      
+      console.log(`[이펙트 레벨] 기본 레벨: ${effect.currentLevel}, 보너스: ${levelBonus}, 타이틀: ${titleText}`);
+      
+      // 상세 정보를 한 줄로 (먼저 준비)
+      let detailsLine = '';
+      if (effect.timing) detailsLine += `${effect.timing}`;
+      if (effect.ability) detailsLine += ` / ${effect.ability}`;
+      if (effect.difficulty) detailsLine += ` / 난이도 ${effect.difficulty}`;
+      if (effect.target) detailsLine += ` / ${effect.target}`;
+      if (effect.range) detailsLine += ` / ${effect.range}`;
+      if (effect.erosion) detailsLine += ` / 침식률 +${effect.erosion}`;
+      if (effect.restriction && effect.restriction !== '-') {
+        detailsLine += ` / 제한 ${effect.restriction}`;
+      } else if (!effect.restriction || effect.restriction === '-') {
+        detailsLine += ` / 제한 -`;
+      }
+      
+      // ✨ Embed 생성 (타이틀 → 상세 정보 → 효과 설명)
+      const embed = new EmbedBuilder()
+        .setColor(embedColor)
+        .setTitle(titleText);
+
+      // 상세 정보 먼저 추가 (작은 텍스트)
+      if (detailsLine) {
+        embed.addFields({ 
+          name: '\u200b',
+          value: `-# ${detailsLine}`, 
+          inline: false 
+        });
+      }
+
+      // 효과 설명 나중에 추가 (Description)
+      if (effectText) {
+        embed.setDescription(effectText);
+      }
+
+      return await message.channel.send({ embeds: [embed] });
+
+    } catch (error) {
+      console.error('이펙트 호출 오류:', error);
+      return message.channel.send(formatError('이펙트를 불러오는 중 오류가 발생했습니다.'));
     }
   }
 }

@@ -55,6 +55,20 @@ class CommandHandler {
       const command = args[0];
       const params = args.slice(1);
 
+      // 이펙트 호출 체크 (한글로만 이루어진 명령어)
+      const knownCommands = [
+        '도움', '시트등록', '시트해제', '시트동기화', '시트푸시', '지정', '지정해제', 
+        '시트입력', '시트확인', '캐릭터삭제', '내캐릭터', '서버캐릭터', '상태패널',
+        '코드네임', '이모지', '컬러', '커버', '웍스', '브리드', '신드롬', '각성', '충동',
+        '판정', '등침', '등장침식', '타이터스', '로이스', '로이스삭제', '리셋',
+        '콤보', '콤보삭제', '콤보확인'
+      ];
+      
+      if (!knownCommands.includes(command) && /^[가-힣:]+$/.test(command)) {
+        // 한글로만 이루어진 명령어 = 이펙트 호출
+        return await this.combatCmd.callEffect(message, command);
+      }
+
       await this.routeCommand(message, command, params);
     } catch (error) {
       console.error('명령어 처리 오류:', error);
@@ -90,6 +104,8 @@ class CommandHandler {
         return await this.charCmd.unsetActive(message);
       case '시트확인':
         return await this.charCmd.checkSheet(message);
+      case '콤보확인':
+        return await this.charCmd.checkCombos(message);
       case '캐릭터삭제':
         return await this.charCmd.deleteCharacter(message, params);
       case '내캐릭터':
@@ -106,6 +122,8 @@ class CommandHandler {
       case '이모지':
         if (params.length === 0) return message.channel.send('❌ 사용법: `!이모지 [이모지]`');
         return await this.charCmd.updateAttribute(message, 'emoji', params[0]);
+      case '컬러':
+        return await this.charCmd.setEmbedColor(message, params);
       case '커버':
         if (params.length === 0) return message.channel.send('❌ 사용법: `!커버 [이름]`');
         return await this.charCmd.updateAttribute(message, 'cover', params.join(' '));
