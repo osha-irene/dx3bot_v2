@@ -548,54 +548,61 @@ class CharacterCommands {
     return r;
   }
 
-  async myCharacters(message) {
+    async listCharacters(message, args) {
     const serverId = message.guild.id;
     const userId = message.author.id;
-    const all = this.db.getAllCharacters(serverId, userId);
-    const active = this.db.getActiveCharacter(serverId, userId);
-    if (!all || Object.keys(all).length === 0) return message.reply('📋 등록된 캐릭터가 없습니다.');
-    
-    let r = `📋 **${message.author.username}님의 캐릭터 목록**\n\n`;
-    for (const [name, data] of Object.entries(all)) {
-      const isActive = name === active;
-      const emoji = data.emoji || '❌';
-      const code = data.codeName || '코드네임 없음';
-      r += isActive ? `✅ ${emoji} **${name}** 「${code}」 ← 현재 활성\n` : `⚪ ${emoji} **${name}** 「${code}」\n`;
-      r += `   💚 HP: ${data.HP || 0} | 🔴 침식률: ${data.침식률 || 0}\n`;
+
+    const showServerWide = args.length > 0 && (args[0] === '서버' || args[0] === 'server');
+
+    if (showServerWide) {
+      const allUsers = this.db.getAllUsers(serverId);
+      if (!allUsers || Object.keys(allUsers).length === 0) {
+        return message.channel.send(formatWarning('이 서버에는 등록된 캐릭터가 없습니다.'));
+      }
+
+      let response = '## 📋 서버 캐릭터 목록\n\n';
+      for (const [uid, characters] of Object.entries(allUsers)) {
+        if (uid.startsWith('__')) continue;
+        
+        const member = await message.guild.members.fetch(uid).catch(() => null);
+        const username = member ? member.user.tag : 'User(' + uid + ')';
+        
+        response += '**' + username + '**\n';
+        for (const [charName, charData] of Object.entries(characters)) {
+          const emoji = charData.emoji || '❌';
+          const codeName = charData.codeName || '코드네임 없음';
+          response += '  ' + emoji + ' **' + charName + '** 「' + codeName + '」\n';
+        }
+        response += '\n';
+      }
+
+      return message.channel.send(response);
+    } else {
+      const all = this.db.getAllCharacters(serverId, userId);
+      const active = this.db.getActiveCharacter(serverId, userId);
+
+      if (!all || Object.keys(all).length === 0) {
+        return message.channel.send(
+          formatWarning('등록된 캐릭터가 없습니다.') + '\n\n' +
+          '`!시트 [시트URL]` 명령어로 캐릭터를 등록하세요.'
+        );
+      }
+
+      let r = '## 📋 <@' + userId + '>님의 캐릭터 목록\n\n';
+      for (const [name, data] of Object.entries(all)) {
+        const isActive = name === active;
+        const emoji = data.emoji || '❌';
+        const code = data.codeName || '코드네임 없음';
+        r += isActive ? '✅ ' + emoji + ' **' + name + '** 「' + code + '」 ← 현재 활성\n' : '⚪ ' + emoji + ' **' + name + '** 「' + code + '」\n';
+        r += '   💚 HP: ' + (data.HP || 0) + ' | 🔴 침식률: ' + (data.침식률 || 0) + '\n';
+      }
+
+      return message.channel.send(r);
     }
-    return message.reply(r);
   }
 
-  async serverCharacters(message) {
-    const serverId = message.guild.id;
-    const allUsers = this.db.getAllUsers(serverId);
-    if (!allUsers || Object.keys(allUsers).length === 0) return message.reply('📋 등록된 캐릭터가 없습니다.');
-    
-    let r = `📋 **${message.guild.name} 서버의 캐릭터 목록**\n\n`;
-    let total = 0;
-    for (const [uid, udata] of Object.entries(allUsers)) {
-      try {
-        const user = await message.guild.members.fetch(uid);
-        const active = this.db.getActiveCharacter(serverId, uid);
-        if (udata && typeof udata === 'object') {
-          const chars = Object.keys(udata).filter(k => typeof udata[k] === 'object' && !k.startsWith('__'));
-          if (chars.length > 0) {
-            r += `👤 **${user.user.username}**\n`;
-            for (const cn of chars) {
-              const cd = udata[cn];
-              const emoji = cd.emoji || '❌';
-              const isActive = cn === active;
-              r += isActive ? `   ✅ ${emoji} **${cn}** ← 활성\n` : `   ⚪ ${emoji} ${cn}\n`;
-              total++;
-            }
-            r += '\n';
-          }
-        }
-      } catch (error) {}
-    }
-    r += `📊 총 **${total}명**`;
-    return message.reply(r);
-  }
+
+  
 
   async deleteCharacter(message, args) {
     const serverId = message.guild.id;

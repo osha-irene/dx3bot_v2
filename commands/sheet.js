@@ -5,9 +5,11 @@
 const { formatError, formatSuccess, formatWarning } = require('../utils/helpers');
 
 class SheetCommands {
-  constructor(database, sheetsClient) {
+  constructor(database, sheetsClient, forumCmd = null, client = null) {
     this.db = database;
     this.sheets = sheetsClient;
+    this.forumCmd = forumCmd;
+    this.client = client;
   }
 
   /**
@@ -128,16 +130,49 @@ class SheetCommands {
       // 🔥 중요: 봇 DB에 캐릭터 데이터 저장
       this.db.setCharacter(serverId, userId, characterData.characterName, characterData);
       
+      // 🔍 디버그: 콤보 데이터 확인
+      console.log('🔍 [SHEET] 시트에서 읽은 데이터:');
+      console.log('  - characterName:', characterData.characterName);
+      console.log('  - combos:', characterData.combos);
+      console.log('  - 콤보:', characterData.콤보);
+      if (characterData.combos) {
+        console.log('  - combos 타입:', Array.isArray(characterData.combos) ? 'Array' : typeof characterData.combos);
+        console.log('  - combos 길이:', characterData.combos.length);
+        if (characterData.combos.length > 0) {
+          console.log('  - 첫 번째 콤보:', characterData.combos[0]);
+        }
+      }
+      
       // 🔥 자동으로 활성 캐릭터 지정
       this.db.setActiveCharacter(serverId, userId, characterData.characterName);
 
-      const successMsg = formatSuccess(`시트가 등록되었습니다!`) + '\n' +
+      // 🆕 포럼에 캐릭터 시트 게시물 생성
+      let forumThreadInfo = null;
+      if (this.forumCmd && message.guild) {
+        if (loadingMsg) {
+          await loadingMsg.edit('🔄 포럼에 게시물을 생성하는 중...');
+        }
+        
+        forumThreadInfo = await this.forumCmd.createCharacterSheetThread(
+          message.guild,
+          serverId,
+          userId,
+          characterData
+        );
+      }
+
+      let successMsg = formatSuccess(`시트가 등록되었습니다!`) + '\n' +
         `📊 시트 탭: **${sheetName}**\n` +
         `📝 캐릭터: **${characterData.characterName}**\n` +
         `💚 HP: ${characterData.HP} | 🔴 침식률: ${characterData.침식률}\n` +
         `⚡ 침식D: ${characterData.침식D} | 💙 로이스: ${characterData.로이스}개\n\n` +
         `✅ **${characterData.characterName}** 캐릭터가 자동으로 활성화되었습니다!\n` +
         `이제 봇 명령어를 사용하면 자동으로 시트가 업데이트됩니다!`;
+
+      // 포럼 게시물이 생성되었으면 링크 추가
+      if (forumThreadInfo && forumThreadInfo.threadId) {
+        successMsg += `\n\n📋 캐릭터 시트 게시물: <#${forumThreadInfo.threadId}>`;
+      }
 
       if (loadingMsg) {
         return await loadingMsg.edit(successMsg);
@@ -189,7 +224,30 @@ class SheetCommands {
 
       // 봇 DB에 저장
       this.db.setCharacter(serverId, userId, characterData.characterName, characterData);
+      
+      // 🔍 디버그: 콤보 데이터 확인
+      console.log('🔍 [SHEET] 시트에서 읽은 데이터:');
+      console.log('  - characterName:', characterData.characterName);
+      console.log('  - combos:', characterData.combos);
+      console.log('  - 콤보:', characterData.콤보);
+      if (characterData.combos) {
+        console.log('  - combos 타입:', Array.isArray(characterData.combos) ? 'Array' : typeof characterData.combos);
+        console.log('  - combos 길이:', characterData.combos.length);
+        if (characterData.combos.length > 0) {
+          console.log('  - 첫 번째 콤보:', characterData.combos[0]);
+        }
+      }
       this.db.setActiveCharacter(serverId, userId, characterData.characterName);
+
+      // 포럼 게시물 업데이트
+      if (this.forumCmd && message.guild) {
+        await this.forumCmd.updateCharacterSheetThread(
+          message.guild,
+          serverId,
+          userId,
+          characterData
+        );
+      }
 
       let response = formatSuccess('시트에서 데이터를 가져왔습니다!') + '\n';
       if (sheetInfo.sheetName) {
@@ -231,6 +289,19 @@ class SheetCommands {
     }
 
     const characterData = this.db.getCharacter(serverId, userId, activeCharName);
+    
+    // 🔍 디버그: DB에서 읽은 데이터 확인
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('🔍 [CHECK-DB] DB에서 읽은 characterData:');
+    console.log('  - characterName:', characterData?.characterName);
+    console.log('  - combos:', characterData?.combos);
+    console.log('  - 콤보:', characterData?.콤보);
+    console.log('  - DB에 combos 있음?', !!characterData?.combos);
+    console.log('  - combos 타입:', Array.isArray(characterData?.combos) ? 'Array' : typeof characterData?.combos);
+    if (characterData?.combos) {
+      console.log('  - combos 길이:', characterData.combos.length);
+    }
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     if (!characterData) {
       return message.reply(formatError('캐릭터 데이터를 찾을 수 없습니다.'));
     }
@@ -312,6 +383,19 @@ class SheetCommands {
       // 🆕 캐릭터별로 시트 정보 저장
       this.db.setCharacterSheet(serverId, userId, characterData.characterName, spreadsheetId, sheetName);
       this.db.setCharacter(serverId, userId, characterData.characterName, characterData);
+      
+      // 🔍 디버그: 콤보 데이터 확인
+      console.log('🔍 [SHEET] 시트에서 읽은 데이터:');
+      console.log('  - characterName:', characterData.characterName);
+      console.log('  - combos:', characterData.combos);
+      console.log('  - 콤보:', characterData.콤보);
+      if (characterData.combos) {
+        console.log('  - combos 타입:', Array.isArray(characterData.combos) ? 'Array' : typeof characterData.combos);
+        console.log('  - combos 길이:', characterData.combos.length);
+        if (characterData.combos.length > 0) {
+          console.log('  - 첫 번째 콤보:', characterData.combos[0]);
+        }
+      }
       this.db.setActiveCharacter(serverId, userId, characterData.characterName);
       
       // 하위 호환 (기존 방식도 유지)
@@ -347,6 +431,19 @@ class SheetCommands {
       }
       
       this.db.setCharacter(serverId, userId, characterData.characterName, characterData);
+      
+      // 🔍 디버그: 콤보 데이터 확인
+      console.log('🔍 [SHEET] 시트에서 읽은 데이터:');
+      console.log('  - characterName:', characterData.characterName);
+      console.log('  - combos:', characterData.combos);
+      console.log('  - 콤보:', characterData.콤보);
+      if (characterData.combos) {
+        console.log('  - combos 타입:', Array.isArray(characterData.combos) ? 'Array' : typeof characterData.combos);
+        console.log('  - combos 길이:', characterData.combos.length);
+        if (characterData.combos.length > 0) {
+          console.log('  - 첫 번째 콤보:', characterData.combos[0]);
+        }
+      }
       this.db.setActiveCharacter(serverId, userId, characterData.characterName);
       
       return { 

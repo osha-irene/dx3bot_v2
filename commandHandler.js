@@ -7,6 +7,7 @@ const CharacterCommands = require('./commands/character');
 const CombatCommands = require('./commands/combat');
 const LoisCommands = require('./commands/lois');
 const AdminCommands = require('./commands/admin');
+const ForumCommands = require('./commands/forum');
 const { extractName } = require('./utils/helpers');
 const { EmbedBuilder } = require('discord.js');
 
@@ -17,10 +18,11 @@ class CommandHandler {
     this.client = client;
 
     // 명령어 모듈 초기화
-    this.sheetCmd = new SheetCommands(database, sheetsClient);
-    this.charCmd = new CharacterCommands(database, sheetsClient);
-    this.combatCmd = new CombatCommands(database, sheetsClient, this.charCmd); // charCmd 전달
-    this.loisCmd = new LoisCommands(database, sheetsClient, this.charCmd); // charCmd 전달
+    this.forumCmd = new ForumCommands(database, client);
+    this.sheetCmd = new SheetCommands(database, sheetsClient, this.forumCmd, client);
+    this.charCmd = new CharacterCommands(database, sheetsClient, this.forumCmd);
+    this.combatCmd = new CombatCommands(database, sheetsClient, this.charCmd);
+    this.loisCmd = new LoisCommands(database, sheetsClient, this.charCmd);
     this.adminCmd = new AdminCommands(database, client);
   }
 
@@ -61,7 +63,7 @@ class CommandHandler {
         '시트입력', '시트확인', '캐릭터삭제', '내캐릭터', '서버캐릭터', '상태패널',
         '코드네임', '이모지', '컬러', '커버', '웍스', '브리드', '신드롬', '각성', '충동',
         '판정', '등침', '등장침식', '타이터스', '로이스', '로이스삭제', '리셋',
-        '콤보', '콤보삭제', '콤보확인'
+        '콤보', '콤보삭제', '콤보확인', '포럼설정', '포럼확인', '포럼해제'
       ];
       
       if (!knownCommands.includes(command) && /^[가-힣:]+$/.test(command)) {
@@ -80,101 +82,26 @@ class CommandHandler {
    * 명령어 라우팅
    */
   async routeCommand(message, command, params) {
+    // !@"이름" 형식 처리 (무기/방어구/비클/아이템/콤보 개별 호출)
+    if (cleanContent.startsWith('!@')) {
+      const match = cleanContent.match(/^!@\s*["'[]?(.+?)["']]?$/);
+      if (match) {
+        const itemName = match[1].trim();
+        return await this.charCmd.handleAtCall(message, itemName);
+      }
+    }
+
     switch (command) {
       // 도움말
       case '도움':
         return await this.handleHelp(message);
 
-      // 시트 명령어
-      case '시트등록':
-        return await this.sheetCmd.register(message, params);
-      case '시트동기화':
-        return await this.sheetCmd.sync(message);
-      case '시트푸시':
-        return await this.sheetCmd.push(message);
-      case '시트해제':
-        return await this.sheetCmd.unregister(message);
-
-      // 캐릭터 명령어
-      case '시트입력':
-        return await this.charCmd.sheetInput(message, params);
-      case '지정':
-        return await this.charCmd.setActive(message, params);
-      case '지정해제':
-        return await this.charCmd.unsetActive(message);
-      case '시트확인':
-        return await this.charCmd.checkSheet(message);
-      case '콤보확인':
-        return await this.charCmd.checkCombos(message);
-      case '캐릭터삭제':
-        return await this.charCmd.deleteCharacter(message, params);
-      case '내캐릭터':
-        return await this.charCmd.myCharacters(message);
-      case '서버캐릭터':
-        return await this.charCmd.serverCharacters(message);
-      case '상태패널':
-        return await this.charCmd.statusPanel(message);
-
-      // 캐릭터 속성 설정
-      case '코드네임':
-        if (params.length === 0) return message.channel.send('❌ 사용법: `!코드네임 "코드네임"`');
-        return await this.charCmd.updateAttribute(message, 'codeName', extractName(params.join(' ')));
-      case '이모지':
-        if (params.length === 0) return message.channel.send('❌ 사용법: `!이모지 [이모지]`');
-        return await this.charCmd.updateAttribute(message, 'emoji', params[0]);
-      case '컬러':
-        return await this.charCmd.setEmbedColor(message, params);
-      case '커버':
-        if (params.length === 0) return message.channel.send('❌ 사용법: `!커버 [이름]`');
-        return await this.charCmd.updateAttribute(message, 'cover', params.join(' '));
-      case '웍스':
-        if (params.length === 0) return message.channel.send('❌ 사용법: `!웍스 [이름]`');
-        return await this.charCmd.updateAttribute(message, 'works', params.join(' '));
-      case '브리드':
-        if (params.length === 0) return message.channel.send('❌ 사용법: `!브리드 [이름]`');
-        return await this.charCmd.updateAttribute(message, 'breed', params.join(' '));
-      case '각성':
-        if (params.length === 0) return message.channel.send('❌ 사용법: `!각성 [이름]`');
-        return await this.charCmd.updateAttribute(message, 'awakening', params.join(' '));
-      case '충동':
-        if (params.length === 0) return message.channel.send('❌ 사용법: `!충동 [이름]`');
-        return await this.charCmd.updateAttribute(message, 'impulse', params.join(' '));
-      case '신드롬':
-        if (params.length < 1 || params.length > 3) {
-          return message.channel.send('❌ 사용법: `!신드롬 [신드롬1] [신드롬2] [신드롬3]` (최대 3개)');
-        }
-        return await this.charCmd.updateAttribute(message, 'syndromes', params.join(' × '));
-
-      // 전투/판정 명령어
-      case '판정':
-        return await this.combatCmd.roll(message, params);
-      case '등침':
-      case '등장침식':
-        return await this.combatCmd.entryErosion(message);
-      case '콤보삭제':
-        if (params.length < 1) return message.channel.send('❌ 사용법: `!콤보삭제 ["콤보 이름"]`');
-        return await this.combatCmd.deleteCombo(message, extractName(params.join(' ')));
-
-      // 로이스 명령어
-      case '로이스':
-        return await this.loisCmd.addLois(message, params);
-      case '로이스삭제':
-        return await this.loisCmd.deleteLois(message, params);
-      case '타이터스':
-        return await this.loisCmd.convertToTitus(message, params);
-      
-      // D로이스 명령어
-      case 'D로':
-        return await this.charCmd.dlois(message, params);
-
-      // 관리자 명령어
-      case '업데이트':
-        return await this.adminCmd.update(message, params);
-      case '리셋':
-        return await this.adminCmd.reset(message, params);
-
-      default:
-        // 알 수 없는 명령어는 무시
+      // 포럼 명령어
+      case '포럼':
+        // !포럼 [채널] - 포럼 설정
+        // !포럼 해제 - 포럼 해제  
+        // !포럼 (인자 없음) - 현재 포럼 확인
+        await this.forumCmd.handleForum(message, args);
         break;
     }
   }
@@ -235,9 +162,16 @@ class CommandHandler {
   async handleHelp(message) {
     const embed1 = new EmbedBuilder()
       .setColor(0x0099ff)
-      .setTitle('📖 DX3bot 명령어 목록 (1/3)')
+      .setTitle('📖 DX3bot 명령어 목록 (1/4)')
       .setDescription('DX3bot의 주요 기능을 안내합니다.')
       .addFields(
+        {
+          name: '📋 **포럼 설정**',
+          value: '> `!포럼설정 #채널` - 캐릭터 시트 포럼 채널 지정\n' +
+                 '> `!포럼확인` - 현재 설정된 포럼 채널 확인\n' +
+                 '> `!포럼해제` - 포럼 채널 설정 해제\n' +
+                 '> 💡 포럼 설정 후 `!시트등록` 하면 자동으로 게시물 생성!'
+        },
         {
           name: '📊 **Google Sheets 연동**',
           value: '> `!시트등록 [URL]` - 자신의 시트를 봇에 등록\n' +
@@ -264,7 +198,7 @@ class CommandHandler {
 
     const embed2 = new EmbedBuilder()
       .setColor(0x0099ff)
-      .setTitle('📖 DX3bot 명령어 목록 (2/3)')
+      .setTitle('📖 DX3bot 명령어 목록 (2/4)')
       .addFields(
         {
           name: '🎲 **판정 시스템**',
@@ -291,7 +225,7 @@ class CommandHandler {
 
     const embed3 = new EmbedBuilder()
       .setColor(0x0099ff)
-      .setTitle('📖 DX3bot 명령어 목록 (3/3)')
+      .setTitle('📖 DX3bot 명령어 목록 (3/4)')
       .addFields(
         {
           name: '🔧 **관리**',
