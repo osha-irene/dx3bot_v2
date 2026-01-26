@@ -13,28 +13,47 @@ class CombatCommands {
     this.erosionRequesters = {}; // 등장침식 요청자 추적
   }
 
-  /**
+/**
    * 활성 캐릭터 정보 가져오기
    */
   async getActiveCharacterData(message) {
     const serverId = message.guild.id;
     const userId = message.author.id;
 
-    // 시트 연동 체크
-    const sheetInfo = this.db.getUserSheet(serverId, userId);
+    // 먼저 활성 캐릭터 확인
+    const activeCharName = this.db.getActiveCharacter(serverId, userId);
+    if (!activeCharName) return null;
+
+    // 활성 캐릭터의 시트 정보 확인
+    const sheetInfo = this.db.getCharacterSheet(serverId, userId, activeCharName);
     
-    if (sheetInfo && this.sheets) {
+    if (sheetInfo && sheetInfo.spreadsheetId && this.sheets) {
       try {
+        console.log(`📊 [combat/getActiveCharacterData] 시트에서 ${activeCharName} 읽기 중...`);
         const data = await this.sheets.readFullCharacter(sheetInfo.spreadsheetId, sheetInfo.sheetName);
+        
         if (data && data.characterName) {
+          // DB에 저장된 emoji 보존
+          const dbData = this.db.getCharacter(serverId, userId, data.characterName);
+          if (dbData && dbData.emoji) {
+            data.emoji = dbData.emoji;
+          }
+          
+          // readFullCharacter가 이미 모든 것을 읽었으므로 추가 읽기 불필요
+          if (!data.effects) data.effects = [];
+          if (!data.combos) data.combos = [];
+          
+          console.log(`✅ [combat/getActiveCharacterData] ${data.characterName} 시트 읽기 완료`);
+          console.log(`   - 콤보: ${data.combos.length}개 (타입: ${typeof data.combos[0]})`);
+          
           return {
             name: data.characterName,
             data,
             fromSheet: true,
-            serverId,
-            userId,
             spreadsheetId: sheetInfo.spreadsheetId,
-            sheetName: sheetInfo.sheetName
+            sheetName: sheetInfo.sheetName,
+            serverId,
+            userId
           };
         }
       } catch (error) {
@@ -42,13 +61,11 @@ class CombatCommands {
       }
     }
 
-    // DB 캐릭터 폴백
-    const activeCharName = this.db.getActiveCharacter(serverId, userId);
-    if (!activeCharName) return null;
-
+    // 시트 연동이 안 되어 있으면 DB에서 가져오기
     const data = this.db.getCharacter(serverId, userId, activeCharName);
     if (!data) return null;
 
+    console.log(`💾 [combat/getActiveCharacterData] ${activeCharName} DB에서 읽기`);
     return {
       name: activeCharName,
       data,
@@ -59,7 +76,6 @@ class CombatCommands {
       sheetName: null
     };
   }
-
   /**
    * !판정 [항목]
    */
@@ -383,7 +399,7 @@ class CombatCommands {
     return message.channel.send(formatSuccess(`**${activeChar.name}**의 콤보 **"${comboName}"**가 저장되었습니다.`));
   }
 
-  /**
+/**
    * !@[콤보 이름] - 콤보 호출 (시트 기반 + Embed + 자동 굴림)
    */
   async callCombo(message, comboName) {
@@ -392,25 +408,32 @@ class CombatCommands {
       return message.reply(formatError('활성화된 캐릭터가 없습니다. `!지정 ["캐릭터 이름"]` 명령어로 캐릭터를 지정해주세요.'));
     }
 
-    // 시트 연동 확인
-    if (!activeChar.fromSheet || !activeChar.spreadsheetId || !this.sheets) {
-      return message.reply(formatError('콤보 기능은 시트 연동 캐릭터만 사용할 수 있습니다. `!시트등록`을 먼저 해주세요.'));
+    // 콤보 데이터 확인 (시트 연동이나 DB에서 이미 로드됨)
+    if (!activeChar.data.combos || activeChar.data.combos.length === 0) {
+      return message.reply(formatError('등록된 콤보가 없습니다. `!시트등록`을 하거나 시트의 196~237행을 확인해주세요.'));
     }
 
     try {
-      // 시트에서 콤보 읽기
-      const combos = await this.sheets.readCombos(activeChar.spreadsheetId, activeChar.sheetName);
-      const combo = combos.find(c => c.name === comboName);
+      // 이미 로드된 콤보 데이터에서 찾기
+      const combo = activeChar.data.combos.find(c => c.name === comboName);
 
       if (!combo) {
-        return message.channel.send(formatError(`콤보 '${comboName}'를 찾을 수 없습니다. 시트의 196~237행을 확인해주세요.`));
+        return message.channel.send(formatError(`콤보 '${comboName}'를 찾을 수 없습니다.`));
       }
 
       const currentErosion = activeChar.data.침식률 || 0;
       
       // 침식률에 맞는 버전 선택
+      let effectList, content;
+      if (currentErosion >= 100) {
+        effectList = combo.effectList100 || '';
+        content = combo.content100 || '';
+      } else {
+        effectList = combo.effectList99 || '';
+        content = combo.content99 || '';
+      }
+      
       const version = currentErosion >= 100 ? '100↑' : '99↓';
-      const comboData = combo[version];
 
       // Embed 생성
       const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
@@ -430,7 +453,7 @@ class CombatCommands {
       const embed = new EmbedBuilder()
         .setColor(embedColor)
         .setTitle(`${version} ${combo.name}`)
-        .setDescription(comboData.effectList || '');
+        .setDescription(effectList || '');
 
       // 상세 정보 (한 줄로)
       let detailsLine = '';
@@ -449,11 +472,20 @@ class CombatCommands {
         });
       }
 
-      // 효과 정보 (한 줄로)
+      // 효과 정보 (다이스, 크리티컬, 공격력, 침식)
       let effectsLine = '';
-      if (comboData.dice) effectsLine += `다이스 ${comboData.dice}`;
-      if (comboData.critical) effectsLine += ` / 크리치 ${comboData.critical}`;
-      if (comboData.attack) effectsLine += ` / 공격력 ${comboData.attack}`;
+      if (combo.dice99 || combo.dice100) {
+        const dice = currentErosion >= 100 ? (combo.dice100 || combo.dice99) : combo.dice99;
+        if (dice) effectsLine += `다이스 ${dice}`;
+      }
+      if (combo.critical99 || combo.critical100) {
+        const critical = currentErosion >= 100 ? (combo.critical100 || combo.critical99) : combo.critical99;
+        if (critical) effectsLine += ` / 크리치 ${critical}`;
+      }
+      if (combo.attack99 || combo.attack100) {
+        const attack = currentErosion >= 100 ? (combo.attack100 || combo.attack99) : combo.attack99;
+        if (attack) effectsLine += ` / 공격력 ${attack}`;
+      }
       if (combo.erosion) effectsLine += ` / 침식 ${combo.erosion}`;
       
       if (effectsLine) {
@@ -465,10 +497,10 @@ class CombatCommands {
       }
 
       // 내용
-      if (comboData.content) {
+      if (content) {
         embed.addFields({ 
           name: '내용', 
-          value: comboData.content, 
+          value: content, 
           inline: false 
         });
       }
@@ -478,31 +510,20 @@ class CombatCommands {
       if (currentErosion >= 220) {
         footerText = '⚠ 침식률 220↑: 더 강력한 콤보가 필요합니다! 시트의 다음 슬롯(202, 208, 214...)에 220↑ 조건을 추가하세요.';
       } else if (currentErosion >= 160) {
-        footerText = '⚠ 침식률 160↑: 고레벨 콤보를 추가할 수 있습니다! 시트의 행 200, 206, 212... (N+4)에 160↑ 조건을 추가하세요.';
+        footerText = '⚠ 침식률 160↑: 더 강력한 콤보가 필요할 수 있습니다! 시트의 다음 슬롯에 160↑ 조건을 추가하세요.';
       }
-      if (footerText) embed.setFooter({ text: footerText });
+      
+      if (footerText) {
+        embed.setFooter({ text: footerText });
+      }
 
-      // 자동 주사위 굴림 버튼
-      const row = new ActionRowBuilder()
-        .addComponents(
-          new ButtonBuilder()
-            .setCustomId(`combo_roll_${message.author.id}_${combo.skill}_${comboData.dice}_${comboData.critical}`)
-            .setLabel('주사위 굴리기')
-            .setStyle(ButtonStyle.Success),
-          new ButtonBuilder()
-            .setCustomId('combo_cancel')
-            .setLabel('취소')
-            .setStyle(ButtonStyle.Secondary)
-        );
-
-      return await message.channel.send({ embeds: [embed], components: [row] });
+      await message.channel.send({ embeds: [embed] });
 
     } catch (error) {
       console.error('콤보 호출 오류:', error);
-      return message.channel.send(formatError('콤보를 불러오는 중 오류가 발생했습니다.'));
+      return message.channel.send(formatError(`콤보 호출 중 오류가 발생했습니다: ${error.message}`));
     }
   }
-
   /**
    * !콤보삭제 [콤보 이름]
    */

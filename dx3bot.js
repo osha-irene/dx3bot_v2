@@ -26,7 +26,7 @@ const database = new Database();
 // Google Sheets 클라이언트 초기화
 let sheetsClient = null;
 if (config.googleSheets.enabled) {
-  sheetsClient = new SheetsClient();
+  sheetsClient = SheetsClient;  // 이미 싱글톤 인스턴스
   sheetsClient.initialize().then(success => {
     if (!success) {
       console.warn('⚠️ Google Sheets 연동을 사용하지 않습니다.');

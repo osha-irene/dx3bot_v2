@@ -63,7 +63,7 @@ class CommandHandler {
         '시트입력', '시트확인', '캐릭터삭제', '내캐릭터', '서버캐릭터', '상태패널',
         '코드네임', '이모지', '컬러', '커버', '웍스', '브리드', '신드롬', '각성', '충동',
         '판정', '등침', '등장침식', '타이터스', '로이스', '로이스삭제', '리셋',
-        '콤보', '콤보삭제', '콤보확인', '포럼설정', '포럼확인', '포럼해제'
+        '콤보', '콤보삭제', '콤보확인', '포럼설정', '포럼확인', '포럼해제', 'D로', '업데이트'
       ];
       
       if (!knownCommands.includes(command) && /^[가-힣:]+$/.test(command)) {
@@ -82,9 +82,11 @@ class CommandHandler {
    * 명령어 라우팅
    */
   async routeCommand(message, command, params) {
+    const content = message.content.trim();
+    
     // !@"이름" 형식 처리 (무기/방어구/비클/아이템/콤보 개별 호출)
-    if (cleanContent.startsWith('!@')) {
-      const match = cleanContent.match(/^!@\s*["'[]?(.+?)["']]?$/);
+    if (content.startsWith('!@')) {
+      const match = content.match(/^!@\s*["'[]?(.+?)["']]?$/);
       if (match) {
         const itemName = match[1].trim();
         return await this.charCmd.handleAtCall(message, itemName);
@@ -96,13 +98,120 @@ class CommandHandler {
       case '도움':
         return await this.handleHelp(message);
 
+      // 시트 명령어
+      case '시트등록':
+        return await this.sheetCmd.register(message, params);
+      
+      case '시트해제':
+        return await this.sheetCmd.unregister(message);
+      
+      case '시트동기화':
+        return await this.sheetCmd.sync(message);
+      
+      case '시트푸시':
+        return await this.sheetCmd.push(message);
+
+      // 캐릭터 명령어
+      case '시트입력':
+        return await this.charCmd.inputSheet(message, params);
+      
+      case '지정':
+        return await this.charCmd.setActive(message, params);
+      
+      case '지정해제':
+        return await this.charCmd.unsetActive(message);
+      
+      case '시트확인':
+        return await this.charCmd.checkSheet(message);
+      
+      case '내캐릭터':
+        return await this.charCmd.listMyCharacters(message);
+      
+      case '서버캐릭터':
+        return await this.charCmd.listServerCharacters(message);
+      
+      case '캐릭터삭제':
+        return await this.charCmd.deleteCharacter(message, params);
+      
+      case '상태패널':
+        return await this.charCmd.statusPanel(message);
+
+      // 캐릭터 속성 설정
+      case '코드네임':
+        return await this.charCmd.setCodeName(message, params);
+      
+      case '이모지':
+        return await this.charCmd.setEmoji(message, params);
+      
+      case '컬러':
+        return await this.charCmd.setColor(message, params);
+      
+      case '커버':
+        return await this.charCmd.setCover(message, params);
+      
+      case '웍스':
+        return await this.charCmd.setWorks(message, params);
+      
+      case '브리드':
+        return await this.charCmd.setBreed(message, params);
+      
+      case '신드롬':
+        return await this.charCmd.setSyndrome(message, params);
+      
+      case '각성':
+        return await this.charCmd.setAwakening(message, params);
+      
+      case '충동':
+        return await this.charCmd.setImpulse(message, params);
+      
+      case 'D로':
+        return await this.charCmd.setDLois(message, params);
+
+      // 전투 명령어
+      case '판정':
+        return await this.combatCmd.roll(message, params);
+      
+      case '등침':
+      case '등장침식':
+        return await this.combatCmd.entryErosion(message);
+      
+      case '콤보삭제':
+        return await this.combatCmd.deleteCombo(message, params);
+      
+      case '콤보확인':
+        return await this.combatCmd.listCombos(message);
+
+      // 로이스 명령어
+      case '로이스':
+        return await this.loisCmd.addLois(message, params);
+      
+      case '로이스삭제':
+        return await this.loisCmd.deleteLois(message, params);
+      
+      case '타이터스':
+        return await this.loisCmd.convertToTitus(message, params);
+
+      // 관리 명령어
+      case '리셋':
+        return await this.adminCmd.reset(message, params);
+      
+      case '업데이트':
+        return await this.adminCmd.update(message, params);
+
       // 포럼 명령어
       case '포럼':
-        // !포럼 [채널] - 포럼 설정
-        // !포럼 해제 - 포럼 해제  
-        // !포럼 (인자 없음) - 현재 포럼 확인
-        await this.forumCmd.handleForum(message, args);
-        break;
+      case '포럼설정':
+        return await this.forumCmd.setForum(message, params);
+      
+      case '포럼확인':
+        return await this.forumCmd.checkForum(message);
+      
+      case '포럼해제':
+        return await this.forumCmd.unsetForum(message);
+
+      default:
+        // 알 수 없는 명령어
+        return message.channel.send(`❌ 알 수 없는 명령어입니다: \`!${command}\`\n\`!도움\` 명령어로 사용법을 확인하세요.`);
     }
   }
 
