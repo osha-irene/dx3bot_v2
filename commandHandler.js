@@ -198,16 +198,21 @@ class CommandHandler {
       case '업데이트':
         return await this.adminCmd.update(message, params);
 
-      // 포럼 명령어
-      case '포럼':
-      case '포럼설정':
-        return await this.forumCmd.setForum(message, params);
-      
-      case '포럼확인':
-        return await this.forumCmd.checkForum(message);
-      
-      case '포럼해제':
-        return await this.forumCmd.unsetForum(message);
+
+	// 포럼 명령어
+	  case '포럼':
+	  case '포럼설정':
+		// forum.js의 handleForum 함수를 호출합니다.
+		return await this.forumCmd.handleForum(message, params);
+	  
+	  case '포럼확인':
+		// forum.js에는 checkForumChannel이라는 이름으로 되어 있습니다.
+		return await this.forumCmd.checkForumChannel(message);
+	  
+	  case '포럼해제':
+		// forum.js에는 clearForumChannel이라는 이름으로 되어 있습니다.
+		return await this.forumCmd.clearForumChannel(message);
+
 
       default:
         // 알 수 없는 명령어
