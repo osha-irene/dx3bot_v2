@@ -1,9 +1,11 @@
 /**
  * 캐릭터 시트 확인 및 포럼 게시 모듈
+ * sheetsMapping.js 기반으로 완전히 재작성
  */
 
 const { convertSyndromeToEnglish } = require('../../utils/helpers');
-const config = require('../../config');
+const config = require('../../config/config');
+const { calculateEffectLevel } = require('../../lib/sheetsMapping');
 
 class CharacterSheetModule {
   constructor(database, sheetsClient) {
@@ -20,6 +22,7 @@ class CharacterSheetModule {
     const codeName = d.codeName || '코드네임 없음';
     if (!Array.isArray(d.lois)) d.lois = [];
     
+    // 브리드 변환
     let breed = "브리드 없음";
     if (d.breed) {
       const b = d.breed.toLowerCase();
@@ -28,10 +31,12 @@ class CharacterSheetModule {
       else if (b === "트라이" || b === "tri") breed = "TRI";
     }
     
+    // 신드롬 변환
     let syndromes = d.syndromes ? 
       d.syndromes.split(" × ").map(s => convertSyndromeToEnglish(s, config.syndromeTranslation)) : 
       ["신드롬 없음"];
     
+    // 헤더 정보
     let r = `${emoji}  **${activeChar.name}** :: **「${codeName}」**\n`;
     r += `> ${d.cover || "커버 없음"}｜${d.works || "웍스 없음"}\n`;
     r += `> ${breed}｜${syndromes.join(" × ")}\n`;
@@ -39,7 +44,7 @@ class CharacterSheetModule {
     r += `> D-Lois｜No.${d.dloisNo || "00"} ${d.dloisName || "D로이스 없음"}\n\n`;
     r += `> **HP** ${d.HP || 0}  |  **침식률** ${d.침식률 || 0}  |  **침식D** ${d.침식D || 0}  |  **로이스** ${d.lois.length}\n`;
     
-    // 능력치
+    // 능력치 (상위 항목 + 하위 항목)
     for (let mainAttr of config.mainAttributes) {
       let sub = [];
       let mainVal = d[mainAttr] || 0;
@@ -86,15 +91,20 @@ class CharacterSheetModule {
       r += `\n${emoji}  **무기**\n`;
       for (let w of d.weapons) {
         r += `ㆍ**${w.name}**\n`;
-        let details = `　　`;
-        if (w.type) details += `${w.type}`;
-        if (w.ability) details += ` | ${w.ability}`;
-        if (w.range) details += ` | ${w.range}`;
-        if (w.accuracy) details += ` | 명중 ${w.accuracy}`;
-        if (w.attack) details += ` | 공격력 ${w.attack}`;
-        if (w.guard) details += ` | 가드 ${w.guard}`;
-        r += `-# ${details}\n`;
-        if (w.description) r += `-# 　${w.description}\n`;
+        let details = [];
+        if (w.type) details.push(w.type);
+        if (w.ability) details.push(w.ability);
+        if (w.range) details.push(`사정거리 ${w.range}`);
+        if (w.accuracy) details.push(`명중 ${w.accuracy}`);
+        if (w.attack) details.push(`공격력 ${w.attack}`);
+        if (w.guard) details.push(`가드 ${w.guard}`);
+        
+        if (details.length > 0) {
+          r += `-# 　${details.join(' | ')}\n`;
+        }
+        if (w.description) {
+          r += `-# 　${w.description}\n`;
+        }
       }
     }
     
@@ -103,13 +113,18 @@ class CharacterSheetModule {
       r += `\n${emoji}  **방어구**\n`;
       for (let a of d.armor) {
         r += `ㆍ**${a.name}**\n`;
-        let details = `　　`;
-        if (a.type) details += `${a.type}`;
-        if (a.dodge) details += ` | 닷지 ${a.dodge}`;
-        if (a.action) details += ` | 행동치 ${a.action}`;
-        if (a.defense) details += ` | 장갑 ${a.defense}`;
-        r += `-# ${details}\n`;
-        if (a.description) r += `-# 　${a.description}\n`;
+        let details = [];
+        if (a.type) details.push(a.type);
+        if (a.dodge) details.push(`닷지 ${a.dodge}`);
+        if (a.action) details.push(`행동치 ${a.action}`);
+        if (a.defense) details.push(`장갑 ${a.defense}`);
+        
+        if (details.length > 0) {
+          r += `-# 　${details.join(' | ')}\n`;
+        }
+        if (a.description) {
+          r += `-# 　${a.description}\n`;
+        }
       }
     }
     
@@ -118,15 +133,20 @@ class CharacterSheetModule {
       r += `\n${emoji}  **비클**\n`;
       for (let v of d.vehicles) {
         r += `ㆍ**${v.name}**\n`;
-        let details = `　　`;
-        if (v.type) details += `${v.type}`;
-        if (v.ability) details += ` | ${v.ability}`;
-        if (v.attack) details += ` | 공격력 ${v.attack}`;
-        if (v.action) details += ` | 행동치 ${v.action}`;
-        if (v.defense) details += ` | 장갑 ${v.defense}`;
-        if (v.move) details += ` | 이동 ${v.move}`;
-        r += `-# ${details}\n`;
-        if (v.description) r += `-# 　${v.description}\n`;
+        let details = [];
+        if (v.type) details.push(v.type);
+        if (v.ability) details.push(v.ability);
+        if (v.attack) details.push(`공격력 ${v.attack}`);
+        if (v.action) details.push(`행동치 ${v.action}`);
+        if (v.defense) details.push(`장갑 ${v.defense}`);
+        if (v.move) details.push(`이동 ${v.move}`);
+        
+        if (details.length > 0) {
+          r += `-# 　${details.join(' | ')}\n`;
+        }
+        if (v.description) {
+          r += `-# 　${v.description}\n`;
+        }
       }
     }
     
@@ -135,11 +155,16 @@ class CharacterSheetModule {
       r += `\n${emoji}  **아이템**\n`;
       for (let i of d.items) {
         r += `ㆍ**${i.name}**\n`;
-        let details = `　　`;
-        if (i.type) details += `${i.type}`;
-        if (i.ability) details += ` | ${i.ability}`;
-        r += `-# ${details}\n`;
-        if (i.description) r += `-# 　${i.description}\n`;
+        let details = [];
+        if (i.type) details.push(i.type);
+        if (i.ability) details.push(i.ability);
+        
+        if (details.length > 0) {
+          r += `-# 　${details.join(' | ')}\n`;
+        }
+        if (i.description) {
+          r += `-# 　${i.description}\n`;
+        }
       }
     }
     
@@ -147,7 +172,6 @@ class CharacterSheetModule {
     if (d.effects && d.effects.length > 0) {
       const currentErosion = d.침식률 || 0;
       const isKigenShu = d.dloisName && d.dloisName.includes('기원종');
-      const { calculateEffectLevel } = require('../../sheetsMapping');
       const effectLevel = calculateEffectLevel(currentErosion, isKigenShu);
       
       r += `\n${emoji}  **이펙트** (침식률 ${currentErosion}, Lv ${effectLevel}${isKigenShu ? ' 기원종' : ''})\n`;
@@ -178,36 +202,35 @@ class CharacterSheetModule {
       }
     }
     
-    // 🎯 콤보를 최하단에 배치 (새로운 형식)
+    // 콤보
     if (d.combos && d.combos.length > 0) {
       r += `\n${emoji}  **콤보**\n`;
       
       for (let combo of d.combos) {
-        // 콤보가 객체인지 확인
         if (typeof combo === 'string') {
-          // DB에서 가져온 경우 (이름만)
           r += `ㆍ**${combo}**\n`;
           continue;
         }
         
-        // 시트에서 읽은 완전한 콤보 데이터
         r += `ㆍ**${combo.name}**\n`;
         
-        // 기본 정보 (타이밍, 난이도, 대상, 사거리, 침식)
+        // 기본 정보 (타이밍, 기능, 난이도, 대상, 사정거리, 제한, 침식)
         let basicInfo = [];
         if (combo.timing) basicInfo.push(combo.timing);
+        if (combo.skill) basicInfo.push(combo.skill);
         if (combo.difficulty) basicInfo.push(combo.difficulty);
         if (combo.target) basicInfo.push(combo.target);
         if (combo.range) basicInfo.push(combo.range);
+        if (combo.restriction) basicInfo.push(combo.restriction);
         if (combo.erosion) basicInfo.push(`침식 ${combo.erosion}`);
         
         if (basicInfo.length > 0) {
           r += `${basicInfo.join(' | ')}\n`;
         }
         
-        // 99↓ 조건 (인용구로 묶기)
+        // 99↓ 조건
         if (combo.effectList99 || combo.content99) {
-          r += `> 99↓: ${combo.effectList99 || ''}\n`;
+          r += `> **99↓**: ${combo.effectList99 || ''}\n`;
           if (combo.content99) {
             const lines = combo.content99.split('\n');
             for (const line of lines) {
@@ -216,11 +239,19 @@ class CharacterSheetModule {
               }
             }
           }
+          // 다이스, 크리티컬, 공격력
+          let stats99 = [];
+          if (combo.dice99) stats99.push(`+${combo.dice99}dx`);
+          if (combo.critical99) stats99.push(`크리티컬 ${combo.critical99}`);
+          if (combo.attack99) stats99.push(`공격력 ${combo.attack99}`);
+          if (stats99.length > 0) {
+            r += `> ${stats99.join(' | ')}\n`;
+          }
         }
         
-        // 100↑ 조건 (인용구로 묶기)
+        // 100↑ 조건
         if (combo.effectList100 || combo.content100) {
-          r += `> 100↑: ${combo.effectList100 || ''}\n`;
+          r += `> **100↑**: ${combo.effectList100 || ''}\n`;
           if (combo.content100) {
             const lines = combo.content100.split('\n');
             for (const line of lines) {
@@ -229,7 +260,17 @@ class CharacterSheetModule {
               }
             }
           }
+          // 다이스, 크리티컬, 공격력
+          let stats100 = [];
+          if (combo.dice100) stats100.push(`+${combo.dice100}dx`);
+          if (combo.critical100) stats100.push(`크리티컬 ${combo.critical100}`);
+          if (combo.attack100) stats100.push(`공격력 ${combo.attack100}`);
+          if (stats100.length > 0) {
+            r += `> ${stats100.join(' | ')}\n`;
+          }
         }
+        
+        r += '\n'; // 콤보 간 간격
       }
     }
     
@@ -335,13 +376,23 @@ class CharacterSheetModule {
             const oldMessages = allMessages.filter(m =>
               m.author.id === message.client.user.id && m.id !== threadInfo.messageId
             );
+            
+            console.log(`🗑️ [UPDATE] ${oldMessages.size}개의 기존 추가 메시지 삭제 중...`);
             for (const msg of oldMessages.values()) {
-              await msg.delete().catch(() => {});
+              await msg.delete().catch((err) => {
+                console.error(`메시지 삭제 실패: ${err.message}`);
+              });
+              await new Promise(resolve => setTimeout(resolve, 100));
             }
             
             // 새 추가 메시지 전송
-            for (let i = 1; i < chunks.length; i++) {
-              await thread.send(chunks[i]);
+            if (chunks.length > 1) {
+              console.log(`📤 [UPDATE] ${chunks.length - 1}개의 새 메시지 전송 중...`);
+              for (let i = 1; i < chunks.length; i++) {
+                await thread.send(chunks[i]);
+                console.log(`   ✅ [${i}/${chunks.length - 1}] 전송 완료 (${chunks[i].length}자)`);
+                await new Promise(resolve => setTimeout(resolve, 200));
+              }
             }
             
             await message.delete().catch(() => {});
@@ -363,6 +414,7 @@ class CharacterSheetModule {
       const threadName = `${emoji} ${characterName} ${codeName ? `「${codeName}」` : ''}`;
       
       const chunks = this.splitContent(sheetContent);
+      console.log(`📝 [CREATE] ${chunks.length}개의 청크로 분할됨`);
       
       const thread = await forumChannel.threads.create({
         name: threadName.substring(0, 100),
@@ -371,8 +423,13 @@ class CharacterSheetModule {
       console.log(`✅ [CHECK] 스레드 생성 완료: ${thread.id}`);
       
       // 추가 메시지 전송
-      for (let i = 1; i < chunks.length; i++) {
-        await thread.send(chunks[i]);
+      if (chunks.length > 1) {
+        console.log(`📤 [CREATE] ${chunks.length - 1}개의 추가 메시지 전송 중...`);
+        for (let i = 1; i < chunks.length; i++) {
+          await thread.send(chunks[i]);
+          console.log(`   ✅ [${i}/${chunks.length - 1}] 전송 완료`);
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
       }
       
       const messages = await thread.messages.fetch({ limit: 1 });
@@ -396,25 +453,41 @@ class CharacterSheetModule {
   }
 
   /**
-   * 내용을 2000자 단위로 분할
+   * 내용을 2000자 단위로 분할 (개선된 버전)
    */
   splitContent(content) {
-    if (content.length <= 2000) return [content];
+    const MAX_LENGTH = 1900;
+    
+    if (content.length <= MAX_LENGTH) {
+      return [content];
+    }
     
     const chunks = [];
     let currentChunk = '';
     const lines = content.split('\n');
     
     for (const line of lines) {
-      if ((currentChunk + line + '\n').length > 1900) {
-        chunks.push(currentChunk);
+      const testChunk = currentChunk + line + '\n';
+      
+      if (testChunk.length > MAX_LENGTH) {
+        if (currentChunk.trim()) {
+          chunks.push(currentChunk.trim());
+        }
         currentChunk = line + '\n';
       } else {
-        currentChunk += line + '\n';
+        currentChunk = testChunk;
       }
     }
     
-    if (currentChunk) chunks.push(currentChunk);
+    if (currentChunk.trim()) {
+      chunks.push(currentChunk.trim());
+    }
+    
+    console.log(`📝 [SPLIT] 콘텐츠를 ${chunks.length}개로 분할 (총 ${content.length}자)`);
+    chunks.forEach((chunk, i) => {
+      console.log(`   [${i + 1}] ${chunk.length}자`);
+    });
+    
     return chunks;
   }
 
@@ -441,8 +514,27 @@ class CharacterSheetModule {
       const activeChar = { name: characterName, data: characterData, fromSheet: false, serverId, userId };
       const content = this.generateSheetContent(activeChar);
       
+      const chunks = this.splitContent(content);
+      
       const message = await thread.messages.fetch(threadInfo.messageId);
-      await message.edit(content);
+      await message.edit(chunks[0]);
+      
+      // 추가 메시지 처리
+      if (chunks.length > 1) {
+        const allMessages = await thread.messages.fetch({ limit: 100 });
+        const oldMessages = allMessages.filter(m =>
+          m.author.id === message.author.id && m.id !== threadInfo.messageId
+        );
+        
+        for (const msg of oldMessages.values()) {
+          await msg.delete().catch(() => {});
+        }
+        
+        for (let i = 1; i < chunks.length; i++) {
+          await thread.send(chunks[i]);
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+      }
       
       console.log(`✅ [AUTO] ${characterName} 시트 자동 업데이트 완료!`);
     } catch (error) {

@@ -13,7 +13,7 @@ class SheetsClient {
   async initialize() {
     try {
       // 서비스 계정 키 파일 경로
-      const keyFilePath = path.join(__dirname, 'google-credentials.json');
+      const keyFilePath = path.join(__dirname, '..', 'config', 'google-credentials.json');
       
       if (!fs.existsSync(keyFilePath)) {
         console.log('⚠️ google-credentials.json 파일이 없습니다. Google Sheets 연동이 비활성화됩니다.');

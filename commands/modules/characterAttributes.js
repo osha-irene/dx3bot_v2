@@ -3,7 +3,7 @@
  */
 
 const { formatError, formatSuccess, convertSyndromeToEnglish } = require('../../utils/helpers');
-const config = require('../../config');
+const config = require('../../config/config');
 
 class CharacterAttributesModule {
   constructor(database, sheetsClient) {

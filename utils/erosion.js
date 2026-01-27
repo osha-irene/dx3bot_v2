@@ -2,7 +2,7 @@
  * 침식률 계산 유틸리티
  */
 
-const config = require('../config');
+const config = require('../config/config');
 
 /**
  * 침식률에 따른 침식D 계산

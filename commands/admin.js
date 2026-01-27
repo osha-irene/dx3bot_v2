@@ -3,7 +3,7 @@
  */
 
 const { formatError, formatSuccess } = require('../utils/helpers');
-const config = require('../config');
+const config = require('../config/config');
 
 class AdminCommands {
   constructor(database, client) {

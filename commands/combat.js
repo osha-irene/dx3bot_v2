@@ -4,7 +4,7 @@
 
 const { formatError, formatSuccess, formatWarning, getMainAttribute, findBestCombo, mentionUser } = require('../utils/helpers');
 const { calculateErosionD, detectErosionDChange, getErosionDChangeMessage } = require('../utils/erosion');
-const config = require('../config');
+const config = require('../config/config');
 
 class CombatCommands {
   constructor(database, sheetsClient) {

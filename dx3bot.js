@@ -4,11 +4,11 @@
  */
 
 const { Client, GatewayIntentBits, Events } = require('discord.js');
-const config = require('./config');
-const Database = require('./database');
-const SheetsClient = require('./sheetsClient');
-const CommandHandler = require('./commandHandler');
-const SlashCommandHandler = require('./slashCommandHandler');
+const config = require('./config/config');
+const Database = require('./lib/database');
+const SheetsClient = require('./lib/sheetsClient');
+const CommandHandler = require('./lib/commandHandler');
+const SlashCommandHandler = require('./lib/slashCommandHandler');
 
 // 디스코드 클라이언트 초기화
 const client = new Client({

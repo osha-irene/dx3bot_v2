@@ -153,7 +153,7 @@ class ForumCommands {
     
     // helper 함수들 import
     const { convertSyndromeToEnglish } = require('../utils/helpers');
-    const config = require('../config');
+    const config = require('../config/config');
     
     const emoji = d.emoji || '❌';
     const codeName = d.codeName || '코드네임 없음';

@@ -1,9 +1,36 @@
+# Environment variables
 .env
-node_modules
-data.json
-comboData.json
-activeCharacter.json
-version.json
-google-credentials.json
+
+# Dependencies
+node_modules/
+
+# Data files (contains user information)
+data/
+*.json
+!package.json
+!package-lock.json
+
+# Google credentials
+config/google-credentials.json
+
+# Logs
 *.log
+logs/
+
+# OS files
 .DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Backup files
+backup/*.json
+
+# Test files
+test/
+*.test.js

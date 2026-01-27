@@ -4,7 +4,7 @@
 
 const { EmbedBuilder } = require('discord.js');
 const { convertSyndromeToEnglish } = require('../../utils/helpers');
-const config = require('../../config');
+const config = require('../../config/config');
 
 class EmbedSheetModule {
   /**
