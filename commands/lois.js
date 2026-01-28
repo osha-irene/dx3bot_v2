@@ -1,5 +1,12 @@
 /**
  * 로이스/타이터스 명령어
+ * 
+ * ❌ 제거된 함수 (시트 동기화로 대체):
+ *    - addLois() → 시트에서 직접 추가
+ *    - deleteLois() → 시트에서 직접 삭제
+ * 
+ * ✅ 유지된 함수:
+ *    - convertToTitus() → 게임 중 실시간 변환 필요
  */
 
 const { extractName, formatError, formatSuccess } = require('../utils/helpers');
@@ -21,85 +28,6 @@ class LoisCommands {
     if (!data) return null;
 
     return { name: activeCharName, data, serverId, userId };
-  }
-
-  /**
-   * !로이스 [이름] [P감정] [N감정] [내용]
-   */
-  async addLois(message, args) {
-    const regex = /^(?:"([^"]+)"|\[([^\]]+)\]|(\S+))\s+(\S+)\s+(\S+)\s+(.+)$/;
-    const match = args.join(' ').match(regex);
-
-    if (!match) {
-      return message.channel.send(formatError('사용법: `!로이스 ["로이스 이름"] P감정 N감정 내용`\n📌 P감정이나 N감정에 `*`을 붙이면 해당 감정이 강조됩니다.'));
-    }
-
-    const loisName = match[1] || match[2] || match[3];
-    const pEmotion = match[4];
-    const nEmotion = match[5];
-    const loisDescription = match[6];
-
-    const activeChar = await this.getActiveCharacterData(message);
-    if (!activeChar) {
-      return message.reply(formatError('활성화된 캐릭터가 없습니다. `!지정 ["캐릭터 이름"]` 명령어로 캐릭터를 지정해주세요.'));
-    }
-
-    // 강조 처리 (【】 전체를 볼드)
-    const formattedPEmotion = pEmotion.includes('*') ? `**【P: ${pEmotion.replace('*', '')}】**` : `P: ${pEmotion}`;
-    const formattedNEmotion = nEmotion.includes('*') ? `**【N: ${nEmotion.replace('*', '')}】**` : `N: ${nEmotion}`;
-
-    if (!activeChar.data.lois) activeChar.data.lois = [];
-
-    const existingIndex = activeChar.data.lois.findIndex(lois => lois.name === loisName);
-    if (existingIndex !== -1) {
-      activeChar.data.lois[existingIndex] = {
-        name: loisName,
-        pEmotion: formattedPEmotion,
-        nEmotion: formattedNEmotion,
-        description: loisDescription
-      };
-    } else {
-      activeChar.data.lois.push({
-        name: loisName,
-        pEmotion: formattedPEmotion,
-        nEmotion: formattedNEmotion,
-        description: loisDescription
-      });
-    }
-
-    this.db.setCharacter(activeChar.serverId, activeChar.userId, activeChar.name, activeChar.data);
-    return message.channel.send(formatSuccess(`**${activeChar.name}**의 로이스 **"${loisName}"**가 등록되었습니다.\n${formattedPEmotion} / ${formattedNEmotion}\n${loisDescription}`));
-  }
-
-  /**
-   * !로이스삭제 [이름]
-   */
-  async deleteLois(message, args) {
-    if (args.length < 1) {
-      return message.channel.send(formatError('사용법: `!로이스삭제 ["로이스 이름"]`'));
-    }
-
-    const loisName = extractName(args.join(' '));
-    const activeChar = await this.getActiveCharacterData(message);
-
-    if (!activeChar) {
-      return message.reply(formatError('활성화된 캐릭터가 없습니다.'));
-    }
-
-    if (!activeChar.data.lois) {
-      return message.channel.send(formatError(`**${activeChar.name}**에게 등록된 로이스가 없습니다.`));
-    }
-
-    const index = activeChar.data.lois.findIndex(lois => lois.name === loisName);
-
-    if (index === -1) {
-      return message.channel.send(formatError(`**${activeChar.name}**에게 **"${loisName}"** 로이스가 존재하지 않습니다.`));
-    }
-
-    activeChar.data.lois.splice(index, 1);
-    this.db.setCharacter(activeChar.serverId, activeChar.userId, activeChar.name, activeChar.data);
-
-    return message.channel.send(formatSuccess(`**${activeChar.name}**의 로이스 **"${loisName}"**가 삭제되었습니다.`));
   }
 
   /**

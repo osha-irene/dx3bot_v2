@@ -1,5 +1,14 @@
 /**
  * 전투/판정 명령어
+ * 
+ * ❌ 제거된 함수 (시트 동기화로 대체):
+ *    - setCombo() → 시트에서 직접 추가
+ *    - deleteCombo() → 시트에서 직접 삭제
+ * 
+ * ✅ 유지된 함수:
+ *    - callCombo() → !@콤보명 호출용
+ *    - callEffect() → !@이펙트명 호출용
+ *    - roll(), entryErosion(), updateStat() → 게임 진행용
  */
 
 const { formatError, formatSuccess, formatWarning, getMainAttribute, findBestCombo, mentionUser } = require('../utils/helpers');
@@ -13,7 +22,7 @@ class CombatCommands {
     this.erosionRequesters = {}; // 등장침식 요청자 추적
   }
 
-/**
+  /**
    * 활성 캐릭터 정보 가져오기
    */
   async getActiveCharacterData(message) {
@@ -76,6 +85,7 @@ class CombatCommands {
       sheetName: null
     };
   }
+
   /**
    * !판정 [항목]
    */
@@ -279,7 +289,7 @@ class CombatCommands {
     }
 
     if (statName === "로이스") {
-      return message.reply(formatWarning('\'로이스\'는 이 명령어로 조정할 수 없습니다. `!로이스` 명령어를 사용하세요.'));
+      return message.reply(formatWarning('\'로이스\'는 이 명령어로 조정할 수 없습니다. 시트에서 직접 수정해주세요.'));
     }
 
     const characterData = activeChar.data;
@@ -373,20 +383,6 @@ class CombatCommands {
   }
 
   /**
-   * !콤보 [콤보 이름] [침식률 조건] [콤보 데이터]
-   */
-  async setCombo(message, comboName, condition, description) {
-    const activeChar = await this.getActiveCharacterData(message);
-    if (!activeChar) {
-      return message.reply(formatError('활성화된 캐릭터가 없습니다. `!지정 [캐릭터 이름]` 명령어로 캐릭터를 지정해주세요.'));
-    }
-
-    this.db.setCombo(activeChar.serverId, activeChar.userId, activeChar.name, comboName, condition, description);
-
-    return message.channel.send(formatSuccess(`**${activeChar.name}**의 콤보 **"${comboName}"**가 저장되었습니다.`));
-  }
-
-/**
    * !@[콤보 이름] - 콤보 호출 (시트 기반 + Embed + 자동 굴림)
    */
   async callCombo(message, comboName) {
@@ -511,26 +507,8 @@ class CombatCommands {
       return message.channel.send(formatError(`콤보 호출 중 오류가 발생했습니다: ${error.message}`));
     }
   }
+
   /**
-   * !콤보삭제 [콤보 이름]
-   */
-  async deleteCombo(message, comboName) {
-    const activeChar = await this.getActiveCharacterData(message);
-    if (!activeChar) {
-      return message.reply(formatError('활성화된 캐릭터가 없습니다. `!지정 ["캐릭터 이름"]` 명령어로 캐릭터를 지정해주세요.'));
-    }
-
-    const deleted = this.db.deleteCombo(activeChar.serverId, activeChar.userId, activeChar.name, comboName);
-
-    if (deleted) {
-      return message.channel.send(formatSuccess(`**${activeChar.name}**의 콤보 **"${comboName}"**가 삭제되었습니다.`));
-    } else {
-      return message.channel.send(formatError(`**${activeChar.name}**에게 **"${comboName}"** 콤보가 존재하지 않습니다.`));
-    }
-  }
-
-
-/**
    * ![이펙트 이름] - 이펙트 상세 정보 표시
    */
   async callEffect(message, effectName) {
@@ -561,26 +539,18 @@ class CombatCommands {
       const effect = effects.find(e => e.name.replace(/\s+/g, '') === normalizedInput);
 
       if (!effect) {
-        return message.channel.send(formatError(`이펙트 '${effectName}'을 찾을 수 없습니다. 시트의 164~193행을 확인해주세요.`));
+        return message.channel.send(formatError(`이펙트 '${effectName}'을 찾을 수 없습니다.`));
       }
 
-      // ✅ 현재 침식률은 activeChar.data에서 가져오기 (실시간)
       const currentErosion = activeChar.data.침식률 || 0;
-      const isKigenShu = activeChar.data.dloisName && activeChar.data.dloisName.includes('기원종');
-      const { calculateEffectLevel } = require('../lib/sheetsMapping');
-      const effectLevel = calculateEffectLevel(currentErosion, isKigenShu);
-
-      // Embed 생성
+      
       const { EmbedBuilder } = require('discord.js');
       
       // 🎨 개인별 컬러코드 사용
       let embedColor;
       if (activeChar.data.embedColor) {
-        console.log(`[이펙트 컬러] 개인 컬러 발견: ${activeChar.data.embedColor}`);
         embedColor = parseInt(activeChar.data.embedColor, 16);
-        console.log(`[이펙트 컬러] 변환된 값: 0x${embedColor.toString(16).toUpperCase()}`);
       } else {
-        console.log(`[이펙트 컬러] 개인 컬러 없음, 기본값 사용 (침식률: ${currentErosion})`);
         // 기본: 어두운 회색, 100 이상: 짙은 빨강
         embedColor = currentErosion >= 100 ? 0x8B0000 : 0x2F3136;
       }
@@ -655,7 +625,5 @@ class CombatCommands {
     }
   }
 }
-
-
 
 module.exports = CombatCommands;
