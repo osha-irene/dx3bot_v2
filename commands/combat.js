@@ -143,38 +143,25 @@ class CombatCommands {
    * 주사위 봇 결과 처리
    */
   async handleDiceResult(diceMessage) {
-    console.log(`\n🎲 [등장침식 2] ===== 주사위 결과 감지 =====`);
-    console.log(`   - 시간: ${new Date().toLocaleTimeString('ko-KR')}`);
-    console.log(`   - 메시지: ${diceMessage.content}`);
-    
     const diceResultMatch = diceMessage.content.match(/(?:\(\d+D\d+\)|＞.*?)\s*＞\s*(\d+)/);
     if (!diceResultMatch) {
-      console.log(`⚠️ [등장침식 2] 주사위 결과 패턴 불일치 - 무시\n`);
       return;
     }
-
     const diceResult = parseInt(diceResultMatch[1]);
-    console.log(`   - 주사위 결과: ${diceResult}`);
     
     const serverId = diceMessage.guild?.id;
 
     if (!serverId || !this.erosionRequesters[serverId]) {
-      console.log(`⚠️ [등장침식 2] 등장침식 요청자 없음 - 무시\n`);
       return;
     }
 
     const userId = Object.keys(this.erosionRequesters[serverId])[0];
     if (!userId) {
-      console.log(`⚠️ [등장침식 2] userId 없음 - 무시\n`);
       return;
     }
-
     const requester = this.erosionRequesters[serverId][userId];
-    console.log(`   - 요청자: ${requester.characterName}`);
-    console.log(`   - fromSheet: ${requester.fromSheet}`);
-    
+
     delete this.erosionRequesters[serverId][userId];
-    console.log(`✅ [등장침식 2] 요청자 삭제 완료`);
 
     // 시트 연동 캐릭터인 경우
     if (requester.fromSheet && requester.spreadsheetId && this.sheets) {
