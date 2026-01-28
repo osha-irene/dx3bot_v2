@@ -400,7 +400,9 @@ class ForumCommands {
     return r;
   }
 
-   /* 스마트 메시지 분할: 의미 있는 섹션별로 분할
+
+/**
+   * 스마트 메시지 분할: 의미 있는 섹션별로 분할
    */
   splitMessage(text) {
     const MAX_LENGTH = 1900;
@@ -512,13 +514,23 @@ class ForumCommands {
       }
     }
     
+    // 마지막 부분: chunks 반환 전에 처리
     console.log(`📝 [SPLIT] ${chunks.length}개의 청크로 분할 완료`);
     chunks.forEach((chunk, i) => {
       console.log(`   [청크 ${i + 1}] ${chunk.length}자`);
     });
     
-    return chunks;
+    // ✅ 마지막 청크를 제외한 모든 청크 끝에 줄바꿈 + 구분선 추가
+    return chunks.map((chunk, i) => {
+      if (i < chunks.length - 1) {
+        return chunk + '\n　​';
+      }
+      return chunk;
+    });
   }
+
+
+
   /**
    * 포럼에 캐릭터 시트 게시물 생성
    * @param {Guild} guild - Discord 서버
@@ -529,9 +541,10 @@ class ForumCommands {
    */
 // forum.js에 새로운 함수 추가:
 
-  /**
+
+/**
    * 포럼에 캐릭터 시트 게시물 생성 (이미지 버전)
-   * 게시글: 캐릭터 이미지만
+   * 게시글: 캐릭터 이미지만 (URL 텍스트 숨김)
    * 댓글: 모든 시트 데이터
    */
 async createCharacterSheetThread(guild, serverId, userId, characterData) {
@@ -565,18 +578,30 @@ async createCharacterSheetThread(guild, serverId, userId, characterData) {
         try {
           const thread = await forumChannel.threads.fetch(existingThread.threadId);
           if (thread) {
-            // 첫 메시지: 이미지
+            // 첫 메시지: 이미지만 (URL 텍스트 숨김)
             const starterMessage = await thread.fetchStarterMessage();
             if (starterMessage) {
               const emoji = characterData.emoji || '';
               const codeName = characterData.codeName || characterData.characterName;
               
-              // 이미지가 있으면 이미지, 없으면 기본 정보
-              const imageContent = characterData.imageUrl ? 
-                `${emoji}  **「${codeName}」${characterData.characterName}**\n${characterData.imageUrl}` :
-                `${emoji}  **「${codeName}」${characterData.characterName}**`;
+              // ✅ 이미지가 있으면 임베드 형식으로 표시 (URL 텍스트 숨김)
+              let imageContent;
+              if (characterData.imageUrl) {
+                // 이미지만 표시하고 URL 텍스트는 숨김
+                imageContent = {
+                  content: `${emoji}  **「${codeName}」${characterData.characterName}**`,
+                  embeds: [{
+                    image: { url: characterData.imageUrl }
+                  }]
+                };
+              } else {
+                // 이미지가 없으면 기본 정보만
+                imageContent = {
+                  content: `${emoji}  **「${codeName}」${characterData.characterName}**`
+                };
+              }
               
-              await starterMessage.edit({ content: imageContent });
+              await starterMessage.edit(imageContent);
 
               // 기존 댓글 삭제 (봇이 작성한 것만)
               const existingMessages = await thread.messages.fetch({ after: starterMessage.id, limit: 100 });
@@ -608,17 +633,25 @@ async createCharacterSheetThread(guild, serverId, userId, characterData) {
       const codeName = characterData.codeName || characterData.characterName;
       const threadTitle = `${emoji ? emoji + ' ' : ''}「${codeName}」${characterData.characterName}`;
 
-      // 게시글 내용: 이미지가 있으면 이미지, 없으면 기본 정보
-      const imageContent = characterData.imageUrl ? 
-        `${emoji}  **「${codeName}」${characterData.characterName}**\n${characterData.imageUrl}` :
-        `${emoji}  **「${codeName}」${characterData.characterName}**`;
+      // ✅ 게시글 내용: 이미지가 있으면 임베드로 표시 (URL 텍스트 숨김)
+      let threadMessage;
+      if (characterData.imageUrl) {
+        threadMessage = {
+          content: `${emoji}  **「${codeName}」${characterData.characterName}**`,
+          embeds: [{
+            image: { url: characterData.imageUrl }
+          }]
+        };
+      } else {
+        threadMessage = {
+          content: `${emoji}  **「${codeName}」${characterData.characterName}**`
+        };
+      }
 
       // 포럼에 스레드 생성
       const thread = await forumChannel.threads.create({
         name: threadTitle,
-        message: {
-          content: imageContent
-        }
+        message: threadMessage
       });
 
       console.log(`✅ 포럼 스레드 생성 완료: ${thread.id}`);
@@ -647,7 +680,7 @@ async createCharacterSheetThread(guild, serverId, userId, characterData) {
       return null;
     }
   }
-  
+
   async updateCharacterSheetThread(guild, serverId, userId, characterData) {
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log('🔍 [FORUM-UPDATE] updateCharacterSheetThread 호출됨');

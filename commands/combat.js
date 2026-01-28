@@ -529,7 +529,8 @@ class CombatCommands {
     }
   }
 
-  /**
+
+/**
    * ![이펙트 이름] - 이펙트 상세 정보 표시
    */
   async callEffect(message, effectName) {
@@ -538,14 +539,22 @@ class CombatCommands {
       return message.reply(formatError('활성화된 캐릭터가 없습니다. `!지정 ["캐릭터 이름"]` 명령어로 캐릭터를 지정해주세요.'));
     }
 
-    // 시트 연동 확인
-    if (!activeChar.fromSheet || !activeChar.spreadsheetId || !this.sheets) {
+    // ✅ 시트 연동 확인
+    const sheetInfo = this.db.getUserSheet(activeChar.serverId, activeChar.userId);
+    
+    if (!sheetInfo || !this.sheets) {
       return message.reply(formatError('이펙트 기능은 시트 연동 캐릭터만 사용할 수 있습니다. `!시트등록`을 먼저 해주세요.'));
     }
 
     try {
-      // 시트에서 이펙트 읽기
-      const effects = await this.sheets.readEffects(activeChar.spreadsheetId, activeChar.sheetName);
+      // ✅ readFullCharacter로 이펙트 읽기 (이미 effects 배열 포함)
+      const characterData = await this.sheets.readFullCharacter(sheetInfo.spreadsheetId, sheetInfo.sheetName);
+      
+      if (!characterData || !characterData.effects || characterData.effects.length === 0) {
+        return message.channel.send(formatError('시트에서 이펙트를 찾을 수 없습니다. 시트의 164~193행을 확인해주세요.'));
+      }
+      
+      const effects = characterData.effects;
       
       // 띄어쓰기 무시하고 검색 (입력값과 이펙트명 모두 띄어쓰기 제거 후 비교)
       const normalizedInput = effectName.replace(/\s+/g, '');
@@ -555,9 +564,10 @@ class CombatCommands {
         return message.channel.send(formatError(`이펙트 '${effectName}'을 찾을 수 없습니다. 시트의 164~193행을 확인해주세요.`));
       }
 
+      // ✅ 현재 침식률은 activeChar.data에서 가져오기 (실시간)
       const currentErosion = activeChar.data.침식률 || 0;
       const isKigenShu = activeChar.data.dloisName && activeChar.data.dloisName.includes('기원종');
-      const { calculateEffectLevel } = require('../sheetsMapping');
+      const { calculateEffectLevel } = require('../lib/sheetsMapping');
       const effectLevel = calculateEffectLevel(currentErosion, isKigenShu);
 
       // Embed 생성
@@ -585,7 +595,7 @@ class CombatCommands {
         levelBonus = 1;
       }
       
-      // 🔥 타이틀 표시용: 기본 레벨 그대로
+      // 🔥 타이틀 표시용: 기본 레벨 + 보너스
       // 🔥 효과 계산용: 기본 레벨 + 보너스
       const displayLevel = effect.currentLevel + levelBonus;
       
@@ -641,9 +651,11 @@ class CombatCommands {
 
     } catch (error) {
       console.error('이펙트 호출 오류:', error);
-      return message.channel.send(formatError('이펙트를 불러오는 중 오류가 발생했습니다.'));
+      return message.channel.send(formatError(`이펙트를 불러오는 중 오류가 발생했습니다: ${error.message}`));
     }
   }
 }
+
+
 
 module.exports = CombatCommands;

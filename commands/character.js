@@ -9,15 +9,18 @@ const CharacterSheetModule = require('./modules/characterSheet');
 const CharacterAttributesModule = require('./modules/characterAttributes');
 const CharacterListModule = require('./modules/characterList');
 
+
 class CharacterCommands {
-  constructor(database, sheetsClient) {
+  constructor(database, sheetsClient = null, forumCmd = null, client = null) { 
     this.db = database;
     this.sheets = sheetsClient;
+    this.forumCmd = forumCmd;
+    this.client = client;
     
     // 서브 모듈 초기화
     this.statusPanelModule = new StatusPanelModule(database);
     this.dataModule = new CharacterDataModule(database, sheetsClient);
-    this.sheetModule = new CharacterSheetModule(database, sheetsClient);
+    this.sheetModule = new CharacterSheetModule(database, forumCmd, sheetsClient);
     this.attributesModule = new CharacterAttributesModule(database, sheetsClient);
     this.listModule = new CharacterListModule(database);
   }
@@ -97,45 +100,96 @@ class CharacterCommands {
   // 캐릭터 속성 설정
   // ============================================
 
-/**
-   * 캐릭터 이미지 설정
+  /**
+   * 캐릭터 이미지 설정 (인장)
+   * 명령어: !인장 [URL] 또는 !인장 (이미지 첨부)
    */
-async handleSetCharacterImage(message, args) {
+  async handleSetCharacterImage(message, args) {
     const activeChar = await this.getActiveCharacterData(message);
     if (!activeChar) return message.reply(formatError('활성화된 캐릭터가 없습니다.'));
 
     const serverId = message.guild.id;
     const userId = message.author.id;
-    const characterName = activeChar.characterName;
+    const characterName = activeChar.name;
 
-    const imageUrl = args[0];
+    let imageUrl = args[0];
+
+    // ✅ 이미지 첨부 확인 (URL보다 우선)
+    if (message.attachments.size > 0) {
+      const attachment = message.attachments.first();
+      if (attachment.contentType && attachment.contentType.startsWith('image/')) {
+        imageUrl = attachment.url;
+        console.log(`📎 [IMAGE] 첨부 이미지 감지:`, imageUrl);
+      }
+    }
 
     // 제거 로직
     if (imageUrl === '제거' || imageUrl === '삭제') {
-      activeChar.imageUrl = null; // null로 명시적 설정
-      await this.db.setCharacter(serverId, userId, characterName, activeChar);
+      activeChar.data.imageUrl = null;
+      await this.db.setCharacter(serverId, userId, characterName, activeChar.data);
+      
+      // 포럼 업데이트 (이미지 제거)
+      if (this.forumCmd) {
+        const characterData = {
+          characterName: characterName,
+          ...activeChar.data,
+          serverId: serverId,
+          userId: userId
+        };
+        await this.forumCmd.createCharacterSheetThread(
+          message.guild, serverId, userId, characterData
+        );
+      }
+      
       return message.reply(formatSuccess('캐릭터 이미지가 제거되었습니다.'));
     }
 
+    // ✅ URL도 없고 첨부도 없으면 안내 메시지
+    if (!imageUrl) {
+      return message.reply(
+        formatError('이미지 URL을 입력하거나 이미지 파일을 첨부해주세요.') + '\n\n' +
+        '**사용법:**\n' +
+        '`!인장 https://i.imgur.com/example.png` (URL 입력)\n' +
+        '`!인장` + 이미지 첨부 (파일 첨부)\n' +
+        '`!인장 제거` (이미지 제거)'
+      );
+    }
+
     // URL 유효성 검사
-    if (!imageUrl || !imageUrl.startsWith('http')) {
+    if (!imageUrl.startsWith('http')) {
       return message.reply(formatError('올바른 URL 형식이 아닙니다.'));
     }
 
     // 데이터 반영
-    activeChar.imageUrl = imageUrl;
+    activeChar.data.imageUrl = imageUrl;
     
-    // 데이터베이스 저장 (구조 유지)
-    await this.db.setCharacter(serverId, userId, characterName, activeChar);
+    // 데이터베이스 저장
+    await this.db.setCharacter(serverId, userId, characterName, activeChar.data);
+    
+    console.log(`🖼️ [IMAGE] 이미지 설정됨:`, imageUrl);
+    console.log(`  - characterName:`, characterName);
 
-    // ✅ 포럼 즉시 업데이트 (이게 있어야 !시트등록 없이도 바뀜)
+    // ✅ 포럼 즉시 업데이트
     if (this.forumCmd) {
-      await this.forumCmd.updateCharacterSheetThread(message.guild, serverId, userId, activeChar);
+      const characterData = {
+        characterName: characterName,
+        ...activeChar.data,
+        serverId: serverId,
+        userId: userId
+      };
+      
+      await this.forumCmd.createCharacterSheetThread(
+        message.guild,
+        serverId,
+        userId,
+        characterData
+      );
+      
+      console.log(`✅ [IMAGE] 포럼 업데이트 완료`);
     }
 
-    return message.reply(formatSuccess('이미지가 설정되었습니다. `!시트확인`으로 확인해보세요!'));
+    return message.reply(formatSuccess('인장이 설정되었습니다! 포럼에서 확인해보세요.'));
   }
-  
   
   async setCodeName(message, args) {
     return await this.attributesModule.setCodeName(
