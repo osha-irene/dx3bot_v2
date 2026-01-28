@@ -97,6 +97,48 @@ class CharacterCommands {
   // 캐릭터 속성 설정
   // ============================================
 
+/**
+   * !캐릭터이미지 [URL] - 캐릭터 이미지 설정
+   */
+  async SetCharacterImage(message, args) {
+    const activeChar = await this.getActiveCharacterData(message);
+    
+    if (!activeChar) {
+      return message.reply(formatError('활성화된 캐릭터가 없습니다.'));
+    }
+
+    if (args.length === 0) {
+      return message.channel.send(
+        formatError('사용법: `!캐릭터이미지 [이미지 URL]`') + '\n\n' +
+        '**예시:**\n' +
+        '`!캐릭터이미지 https://example.com/character.png`\n' +
+        '`!캐릭터이미지 제거` - 이미지 제거'
+      );
+    }
+
+    const imageUrl = args[0];
+
+    if (imageUrl === '제거' || imageUrl === '삭제') {
+      delete activeChar.data.imageUrl;
+      this.db.saveCharacter(activeChar.serverId, activeChar.userId, activeChar.name, activeChar.data);
+      return message.reply(formatSuccess('캐릭터 이미지가 제거되었습니다.'));
+    }
+
+    // URL 유효성 검사 (간단)
+    if (!imageUrl.startsWith('http://') && !imageUrl.startsWith('https://')) {
+      return message.reply(formatError('올바른 URL 형식이 아닙니다. http:// 또는 https://로 시작해야 합니다.'));
+    }
+
+    activeChar.data.imageUrl = imageUrl;
+    this.db.saveCharacter(activeChar.serverId, activeChar.userId, activeChar.name, activeChar.data);
+
+    return message.reply(
+      formatSuccess('캐릭터 이미지가 설정되었습니다!') + '\n' +
+      `🖼️ ${imageUrl}\n\n` +
+      '`!시트등록` 명령어로 포럼에 업데이트하세요.'
+    );
+  }
+
   async setCodeName(message, args) {
     return await this.attributesModule.setCodeName(
       message, 

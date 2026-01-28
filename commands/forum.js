@@ -180,14 +180,14 @@ class ForumCommands {
       let sub = [];
       let mainVal = d[mainAttr] || 0;
       for (let [k, v] of Object.entries(d)) {
-        if (config.subToMainMapping[k] === mainAttr) sub.push(`${k}: ${v}`);
+        if (config.subToMainMapping[k] === mainAttr) sub.push(`${k} ${v}`);
         else {
           for (let p in config.dynamicMappingRules) {
-            if (k.startsWith(p) && config.dynamicMappingRules[p] === mainAttr) sub.push(`${k}: ${v}`);
+            if (k.startsWith(p) && config.dynamicMappingRules[p] === mainAttr) sub.push(`${k} ${v}`);
           }
         }
       }
-      if (sub.length > 0 || mainVal !== 0) r += `>     **【${mainAttr}】**  ${mainVal}   ` + sub.join(' ') + '\n';
+      if (sub.length > 0 || mainVal !== 0) r += `>     **【${mainAttr}】**  ${mainVal}　` + sub.join('　') + '\n';
     }
     
     const combos = this.db.getCombos(activeChar.serverId, activeChar.userId, activeChar.name);
@@ -196,37 +196,7 @@ class ForumCommands {
       for (let cn in combos) r += `> ㆍ **${cn}**\n`;
     }
     
-
-    // 콤보 (시트에서 읽은 combos 배열)
-    if (d.combos && Array.isArray(d.combos) && d.combos.length > 0) {
-      r += `\n${emoji}  **콤보**\n`;
-      for (let combo of d.combos) {
-        // 빈 콤보 제외
-        if (!combo.name || combo.name === '콤보명' || combo.name.trim() === '') continue;
-        
-        r += `ㆍ**${combo.name}**\n`;
-        let details = `　　`;
-        if (combo.timing) details += `${combo.timing}`;
-        if (combo.skill) details += ` | ${combo.skill}`;
-        if (combo.target) details += ` | ${combo.target}`;
-        if (combo.range) details += ` | ${combo.range}`;
-        if (combo.erosion) details += ` | 침식 ${combo.erosion}`;
-        r += `-# ${details}\n`;
-        
-        // 99↓ 정보
-        if (combo['99↓'] && combo['99↓'].effectList) {
-          r += `-# 　99↓: ${combo['99↓'].effectList}\n`;
-          if (combo['99↓'].content) r += `-# 　　${combo['99↓'].content}\n`;
-        }
-        
-        // 100↑ 정보
-        if (combo['100↑'] && combo['100↑'].effectList) {
-          r += `-# 　100↑: ${combo['100↑'].effectList}\n`;
-          if (combo['100↑'].content) r += `-# 　　${combo['100↑'].content}\n`;
-        }
-      }
-    }
-    if (d.lois && d.lois.length > 0) {
+	if (d.lois && d.lois.length > 0) {
       r += `\n${emoji}  **로이스**\n`;
       for (let l of d.lois) {
         if (l.isTitus) {
@@ -305,10 +275,10 @@ class ForumCommands {
       // 이펙트 레벨 계산
       const currentErosion = d.침식률 || 0;
       const isKigenShu = d.dloisName && d.dloisName.includes('기원종');
-      const { calculateEffectLevel } = require('../sheetsMapping');
+      const { calculateEffectLevel } = require('../lib/sheetsMapping');
       const effectLevel = calculateEffectLevel(currentErosion, isKigenShu);
       
-      r += `\n${emoji}  **이펙트** (침식률 ${currentErosion}, Lv ${effectLevel}${isKigenShu ? ' 기원종' : ''})\n`;
+      r += `\n${emoji}  **이펙트** \n`;
       
       let effectLine = '';
       let effectsInLine = 0;
@@ -346,54 +316,209 @@ class ForumCommands {
         r += effectLine + '\n';
       }
     }
-    
-    // 콤보 목록 (시트에서 읽기)
-    if (activeChar.fromSheet && activeChar.spreadsheetId && d.combos && d.combos.length > 0) {
+       
+    // 콤보 (시트에서 읽은 combos 배열)
+    if (d.combos && Array.isArray(d.combos) && d.combos.length > 0) {
       r += `\n${emoji}  **콤보**\n`;
       
+      const currentErosion = d['침식률'] || 0;  // 현재 침식률
+      
       for (let combo of d.combos) {
-        r += `ㆍ**${combo}**\n`;
+        // 빈 콤보 제외
+        if (!combo.name || combo.name === '콤보명' || combo.name.trim() === '') continue;
+        
+        r += `ㆍ**${combo.name}**\n`;
+        
+        // 기본 정보
+        let info = [];
+        if (combo.timing) info.push(combo.timing);
+        if (combo.skill) info.push(combo.skill);
+        if (combo.difficulty) info.push(combo.difficulty);
+        if (combo.target && combo.target !== '-') info.push(combo.target);
+        if (combo.range && combo.range !== '-') info.push(combo.range);
+        if (combo.restriction && combo.restriction !== '-') info.push(combo.restriction);
+        if (combo.erosion) info.push(`침식 ${combo.erosion}`);
+        
+        if (info.length > 0) {
+          r += `${info.join(' | ')}\n`;
+        }
+        
+        // 침식률에 따라 조건별로 표시
+        if (currentErosion < 100) {
+          // 99↓ 조건만 표시
+          if (combo.effectList99 || combo.content99) {
+            r += `-# > **99↓**: ${combo.effectList99 || ''}\n`;
+            
+            if (combo.content99) {
+              const lines = combo.content99.split('\n');
+              for (const line of lines) {
+                if (line.trim()) {
+                  r += `-# > ${line.trim()}\n`;
+                }
+              }
+            }
+            
+            let stats = [];
+            if (combo.dice99) stats.push(`+${combo.dice99}dx`);
+            if (combo.critical99 && combo.critical99 !== 10) stats.push(`크리 ${combo.critical99}`);
+            if (combo.attack99) stats.push(`공격 ${combo.attack99}`);
+            
+            if (stats.length > 0) {
+              r += `-# > ${stats.join(' | ')}\n`;
+            }
+          }
+        } else {
+          // 100↑ 조건만 표시
+          if (combo.effectList100 || combo.content100) {
+            r += `-# > **100↑**: ${combo.effectList100 || ''}\n`;
+            
+            if (combo.content100) {
+              const lines = combo.content100.split('\n');
+              for (const line of lines) {
+                if (line.trim()) {
+                  r += `-# > ${line.trim()}\n`;
+                }
+              }
+            }
+            
+            let stats = [];
+            if (combo.dice100) stats.push(`+${combo.dice100}dx`);
+            if (combo.critical100 && combo.critical100 !== 10) stats.push(`크리 ${combo.critical100}`);
+            if (combo.attack100) stats.push(`공격 ${combo.attack100}`);
+            
+            if (stats.length > 0) {
+              r += `-# > ${stats.join(' | ')}\n`;
+            }
+          }
+        }
+        
+        r += '\n'; // 콤보 사이 간격
       }
     }
-    
-    if (activeChar.fromSheet) {
-      r += `\n📊 *Google Sheets 연동 중*`;
-      if (activeChar.sheetName) r += ` (탭: ${activeChar.sheetName})`;
-    }
-    
+	
+	   
     return r;
   }
 
-
-  
-  /**
-   * 긴 메시지를 2000자 단위로 분할
+   /* 스마트 메시지 분할: 의미 있는 섹션별로 분할
    */
   splitMessage(text) {
-    if (text.length <= 2000) {
+    const MAX_LENGTH = 1900;
+    
+    if (text.length <= MAX_LENGTH) {
       return [text];
     }
     
-    const chunks = [];
-    let currentChunk = '';
-    const lines = text.split('\n');
+    console.log(`📝 [SPLIT] 메시지가 ${text.length}자로 길어서 분할 시작...`);
     
-    for (const line of lines) {
-      if ((currentChunk + line + '\n').length > 1900) {
-        chunks.push(currentChunk);
-        currentChunk = line + '\n';
-      } else {
-        currentChunk += line + '\n';
+    // 이모지를 포함한 섹션 헤더 패턴 (이모지 + "**무기**" 형태)
+    const emojiPattern = /[\p{Emoji}\p{Emoji_Component}]\s+\*\*/u;
+    
+    // 각 섹션의 시작 위치 찾기
+    const findSectionStart = (keyword) => {
+      // 이모지 포함 패턴으로 찾기
+      const regex = new RegExp(`[\\s\\S]{0,10}\\*\\*${keyword}\\*\\*`, 'u');
+      const match = text.match(regex);
+      if (match) {
+        const fullMatch = match[0];
+        const index = text.indexOf(fullMatch);
+        // 이모지가 있다면 이모지부터 시작
+        const emojiMatch = fullMatch.match(/[\p{Emoji}\p{Emoji_Component}]/u);
+        if (emojiMatch) {
+          const emojiIndex = fullMatch.indexOf(emojiMatch[0]);
+          return index + emojiIndex;
+        }
+        return index;
+      }
+      return -1;
+    };
+    
+    const weaponsStart = findSectionStart('무기');
+    const effectsStart = findSectionStart('이펙트');
+    const combosStart = findSectionStart('콤보');
+    
+    const chunks = [];
+    
+    // === 청크 1: 캐릭터 정보 + 로이스 + 메모리 ===
+    let chunk1End = weaponsStart !== -1 ? weaponsStart : text.length;
+    const chunk1 = text.substring(0, chunk1End).trim();
+    if (chunk1) chunks.push(chunk1);
+    
+    // === 청크 2: 무기 + 방어구 + 비클 + 아이템 ===
+    if (weaponsStart !== -1) {
+      let chunk2End = effectsStart !== -1 ? effectsStart : 
+                       combosStart !== -1 ? combosStart : text.length;
+      const chunk2 = text.substring(weaponsStart, chunk2End).trim();
+      
+      if (chunk2.length > MAX_LENGTH) {
+        const lines = chunk2.split('\n');
+        let tempChunk = '';
+        
+        for (const line of lines) {
+          if ((tempChunk + line + '\n').length > MAX_LENGTH) {
+            if (tempChunk.trim()) chunks.push(tempChunk.trim());
+            tempChunk = line + '\n';
+          } else {
+            tempChunk += line + '\n';
+          }
+        }
+        
+        if (tempChunk.trim()) chunks.push(tempChunk.trim());
+      } else if (chunk2) {
+        chunks.push(chunk2);
       }
     }
     
-    if (currentChunk) {
-      chunks.push(currentChunk);
+    // === 청크 3: 이펙트 + 콤보 ===
+    if (effectsStart !== -1) {
+      const chunk3 = text.substring(effectsStart).trim();
+      
+      if (chunk3.length > MAX_LENGTH) {
+        const lines = chunk3.split('\n');
+        let tempChunk = '';
+        
+        for (const line of lines) {
+          if ((tempChunk + line + '\n').length > MAX_LENGTH) {
+            if (tempChunk.trim()) chunks.push(tempChunk.trim());
+            tempChunk = line + '\n';
+          } else {
+            tempChunk += line + '\n';
+          }
+        }
+        
+        if (tempChunk.trim()) chunks.push(tempChunk.trim());
+      } else if (chunk3) {
+        chunks.push(chunk3);
+      }
+    } else if (combosStart !== -1) {
+      const chunk3 = text.substring(combosStart).trim();
+      
+      if (chunk3.length > MAX_LENGTH) {
+        const lines = chunk3.split('\n');
+        let tempChunk = '';
+        
+        for (const line of lines) {
+          if ((tempChunk + line + '\n').length > MAX_LENGTH) {
+            if (tempChunk.trim()) chunks.push(tempChunk.trim());
+            tempChunk = line + '\n';
+          } else {
+            tempChunk += line + '\n';
+          }
+        }
+        
+        if (tempChunk.trim()) chunks.push(tempChunk.trim());
+      } else if (chunk3) {
+        chunks.push(chunk3);
+      }
     }
+    
+    console.log(`📝 [SPLIT] ${chunks.length}개의 청크로 분할 완료`);
+    chunks.forEach((chunk, i) => {
+      console.log(`   [청크 ${i + 1}] ${chunk.length}자`);
+    });
     
     return chunks;
   }
-
   /**
    * 포럼에 캐릭터 시트 게시물 생성
    * @param {Guild} guild - Discord 서버
@@ -402,15 +527,20 @@ class ForumCommands {
    * @param {Object} characterData - 캐릭터 데이터
    * @returns {Object|null} - { threadId, messageId } 또는 null
    */
-  async createCharacterSheetThread(guild, serverId, userId, characterData) {
+// forum.js에 새로운 함수 추가:
+
+  /**
+   * 포럼에 캐릭터 시트 게시물 생성 (이미지 버전)
+   * 게시글: 캐릭터 이미지만
+   * 댓글: 모든 시트 데이터
+   */
+async createCharacterSheetThread(guild, serverId, userId, characterData) {
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log('🔍 [FORUM-CREATE] createCharacterSheetThread 호출됨');
     console.log('  - characterName:', characterData?.characterName);
-    console.log('  - characterData에 combos 있음?', 'combos' in characterData);
-    console.log('  - characterData.combos:', characterData?.combos);
-    console.log('  - combos 길이:', characterData?.combos?.length);
-    console.log('  - characterData의 모든 키:', Object.keys(characterData));
+    console.log('  - imageUrl:', characterData?.imageUrl);
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    
     try {
       const forumChannelId = this.db.getSheetForumChannel(serverId);
 
@@ -435,30 +565,35 @@ class ForumCommands {
         try {
           const thread = await forumChannel.threads.fetch(existingThread.threadId);
           if (thread) {
-            // 기존 스레드의 첫 메시지 업데이트
-            const message = await thread.fetchStarterMessage();
-            if (message) {
-              const text = this.createCharacterSheetText(characterData, userId);
+            // 첫 메시지: 이미지
+            const starterMessage = await thread.fetchStarterMessage();
+            if (starterMessage) {
+              const emoji = characterData.emoji || '';
+              const codeName = characterData.codeName || characterData.characterName;
               
-      // 메시지 분할
-      const chunks = this.splitMessage(text);
-      const firstMessage = chunks[0];
-      const additionalMessages = chunks.slice(1);
+              // 이미지가 있으면 이미지, 없으면 기본 정보
+              const imageContent = characterData.imageUrl ? 
+                `${emoji}  **「${codeName}」${characterData.characterName}**\n${characterData.imageUrl}` :
+                `${emoji}  **「${codeName}」${characterData.characterName}**`;
+              
+              await starterMessage.edit({ content: imageContent });
 
-      // 첫 메시지 수정
-      await message.edit({ content: firstMessage });
+              // 기존 댓글 삭제 (봇이 작성한 것만)
+              const existingMessages = await thread.messages.fetch({ after: starterMessage.id, limit: 100 });
+              const botMessages = existingMessages.filter(m => m.author.id === this.client.user.id);
+              for (const msg of botMessages.values()) {
+                await msg.delete();
+              }
 
-      // 기존 추가 메시지 삭제
-      const existingMessages = await thread.messages.fetch({ after: message.id, limit: 100 });
-      const botMessages = existingMessages.filter(m => m.author.id === this.client.user.id);
-      for (const msg of botMessages.values()) {
-        await msg.delete();
-      }
+              // 새 데이터 댓글 작성
+              const sheetText = this.createCharacterSheetText(characterData, userId);
+              const chunks = this.splitMessage(sheetText);
+              
+              for (let i = 0; i < chunks.length; i++) {
+                await thread.send(chunks[i]);
+                console.log(`✅ 데이터 댓글 ${i + 1}/${chunks.length} 전송 완료`);
+              }
 
-      // 새 추가 메시지 전송
-      for (let i = 0; i < additionalMessages.length; i++) {
-        await thread.send(additionalMessages[i]);
-      }
               console.log(`✅ 기존 스레드 업데이트 완료`);
               return existingThread;
             }
@@ -468,37 +603,33 @@ class ForumCommands {
         }
       }
 
-      // 게시물 제목: 「코드네임」이름
+      // 게시물 제목
       const emoji = characterData.emoji || '';
       const codeName = characterData.codeName || characterData.characterName;
-      const threadTitle = `${emoji ? emoji + ' ' : ''} 「${codeName}」${characterData.characterName}`;
+      const threadTitle = `${emoji ? emoji + ' ' : ''}「${codeName}」${characterData.characterName}`;
 
-      // 게시물 내용
-      const text = this.createCharacterSheetText(characterData, userId);
-
-      // 포럼에 스레드 생성
-      
-      // 메시지 분할
-      const chunks = this.splitMessage(text);
-      const firstMessage = chunks[0];
-      const additionalMessages = chunks.slice(1);
+      // 게시글 내용: 이미지가 있으면 이미지, 없으면 기본 정보
+      const imageContent = characterData.imageUrl ? 
+        `${emoji}  **「${codeName}」${characterData.characterName}**\n${characterData.imageUrl}` :
+        `${emoji}  **「${codeName}」${characterData.characterName}**`;
 
       // 포럼에 스레드 생성
       const thread = await forumChannel.threads.create({
         name: threadTitle,
         message: {
-          content: firstMessage
+          content: imageContent
         }
       });
 
       console.log(`✅ 포럼 스레드 생성 완료: ${thread.id}`);
 
-      // 스레드 ID와 메시지 ID 저장
+      // 댓글로 시트 데이터 전송
+      const sheetText = this.createCharacterSheetText(characterData, userId);
+      const chunks = this.splitMessage(sheetText);
       
-      // 추가 메시지 전송
-      for (let i = 0; i < additionalMessages.length; i++) {
-        await thread.send(additionalMessages[i]);
-        console.log(`✅ 추가 메시지 ${i + 1}/${additionalMessages.length} 전송 완료`);
+      for (let i = 0; i < chunks.length; i++) {
+        await thread.send(chunks[i]);
+        console.log(`✅ 데이터 댓글 ${i + 1}/${chunks.length} 전송 완료`);
       }
 
       const starterMessage = await thread.fetchStarterMessage();
@@ -516,14 +647,7 @@ class ForumCommands {
       return null;
     }
   }
-
-  /**
-   * 포럼 스레드 업데이트
-   * @param {Guild} guild - Discord 서버
-   * @param {string} serverId - 서버 ID
-   * @param {string} userId - 유저 ID
-   * @param {Object} characterData - 캐릭터 데이터
-   */
+  
   async updateCharacterSheetThread(guild, serverId, userId, characterData) {
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log('🔍 [FORUM-UPDATE] updateCharacterSheetThread 호출됨');
