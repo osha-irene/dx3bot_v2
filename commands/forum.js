@@ -400,6 +400,71 @@ class ForumCommands {
     return r;
   }
 
+/**
+ * forum.js에 추가할 함수
+ * 
+ * 첫 번째 청크(기본 정보)만 수정하는 경량 업데이트 함수
+ * HP, 침식률 등 실시간 값만 변경됐을 때 사용
+ */
+
+  /**
+   * 🔥 첫 번째 청크(기본 정보)만 수정 - 경량 업데이트
+   * HP, 침식률 등 실시간 값 변경 시 사용
+   */
+  async updateFirstChunk(guild, serverId, userId, characterData) {
+    console.log(`⚡ [FORUM] updateFirstChunk 호출 - ${characterData.characterName}`);
+    
+    try {
+      const threadInfo = this.db.getCharacterSheetThread(serverId, userId, characterData.characterName);
+      
+      if (!threadInfo || !threadInfo.threadId) {
+        console.log('⚠️ [FORUM] 스레드 없음, 전체 업데이트로 폴백');
+        return await this.createCharacterSheetThread(guild, serverId, userId, characterData);
+      }
+
+      const forumChannelId = this.db.getSheetForumChannel(serverId);
+      if (!forumChannelId) return false;
+
+      const forumChannel = guild.channels.cache.get(forumChannelId);
+      if (!forumChannel) return false;
+
+      const thread = await forumChannel.threads.fetch(threadInfo.threadId);
+      if (!thread) return false;
+
+      const starterMessage = await thread.fetchStarterMessage();
+      if (!starterMessage) return false;
+
+      // 봇이 작성한 첫 번째 댓글 찾기
+      const messages = await thread.messages.fetch({ after: starterMessage.id, limit: 10 });
+      const botMessages = messages
+        .filter(m => m.author.id === this.client.user.id)
+        .sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+      
+      const firstBotMessage = botMessages.first();
+      
+      if (!firstBotMessage) {
+        console.log('⚠️ [FORUM] 첫 번째 댓글 없음, 전체 업데이트로 폴백');
+        return await this.createCharacterSheetThread(guild, serverId, userId, characterData);
+      }
+
+      // 첫 번째 청크만 재생성
+      const sheetText = this.createCharacterSheetText(characterData, userId);
+      const chunks = this.splitMessage(sheetText);
+      
+      if (chunks.length > 0) {
+        await firstBotMessage.edit(chunks[0]);
+        console.log(`✅ [FORUM] 첫 번째 청크만 수정 완료 (${chunks[0].length}자)`);
+      }
+
+      return true;
+
+    } catch (error) {
+      console.error('❌ [FORUM] updateFirstChunk 오류:', error.message);
+      // 실패 시 전체 업데이트로 폴백
+      return await this.createCharacterSheetThread(guild, serverId, userId, characterData);
+    }
+  }
+
 
 /**
    * 스마트 메시지 분할: 의미 있는 섹션별로 분할

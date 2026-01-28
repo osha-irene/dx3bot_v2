@@ -1,26 +1,23 @@
 /**
  * 캐릭터 시트 확인 및 포럼 게시 모듈
- * sheetsMapping.js 기반으로 완전히 재작성
+ * 
+ * 🔥 수정: DB의 실시간 값(침식률, HP, 침식D)을 시트 데이터보다 우선
  */
 
 const { convertSyndromeToEnglish } = require('../../utils/helpers');
 const config = require('../../config/config');
 const { calculateEffectLevel } = require('../../lib/sheetsMapping');
-/**
- * 캐릭터 시트 모듈
- */
 
 class CharacterSheetModule {
   constructor(database, forumCmd = null, sheetsClient = null) {
     this.db = database;
-    this.forumCmd = forumCmd;  // ✅ 추가
-    this.sheets = sheetsClient;  // ✅ 추가
+    this.forumCmd = forumCmd;
+    this.sheets = sheetsClient;
   }
 
-  // ... (generateSheetContent, splitContent 등 기존 함수들은 그대로 유지)
-
   /**
-   * 시트 확인 및 포럼 게시 (실시간 동기화 포함) ⭐ 완전 수정
+   * 시트 확인 및 포럼 게시 (실시간 동기화 포함)
+   * 🔥 수정: DB의 실시간 값(침식률, HP, 침식D) 보존
    */
   async checkSheet(message, getActiveCharacterData, formatError) {
     console.log(`\n🔍 [CHECK] ===== 시트확인 시작 =====`);
@@ -36,7 +33,10 @@ class CharacterSheetModule {
     
     console.log(`🔍 [CHECK] Server: ${serverId}, User: ${userId}, Char: ${characterName}`);
 
-    // 🆕 Google Sheets 연동 확인 및 실시간 동기화
+    // 🔥 먼저 현재 DB 데이터 가져오기 (실시간 값 보존용)
+    const currentDbData = this.db.getCharacter(serverId, userId, characterName);
+
+    // Google Sheets 연동 확인 및 실시간 동기화
     let latestData = activeChar.data;
     
     if (this.sheets) {
@@ -54,20 +54,31 @@ class CharacterSheetModule {
           );
           
           if (sheetData && sheetData.characterName) {
-            // 기존 emoji와 sheetThread 보존
-            if (activeChar.data.emoji) {
-              sheetData.emoji = activeChar.data.emoji;
+            // 🔥 DB에 저장된 실시간 값 보존 (침식률, HP, 침식D는 봇에서 관리)
+            if (currentDbData) {
+              if (currentDbData.침식률 !== undefined) {
+                console.log(`🔄 [CHECK] DB 침식률 보존: ${currentDbData.침식률} (시트: ${sheetData.침식률})`);
+                sheetData.침식률 = currentDbData.침식률;
+              }
+              if (currentDbData.HP !== undefined) {
+                console.log(`🔄 [CHECK] DB HP 보존: ${currentDbData.HP} (시트: ${sheetData.HP})`);
+                sheetData.HP = currentDbData.HP;
+              }
+              if (currentDbData.침식D !== undefined) {
+                sheetData.침식D = currentDbData.침식D;
+              }
+              if (currentDbData.emoji) {
+                sheetData.emoji = currentDbData.emoji;
+              }
+              if (currentDbData.imageUrl) {
+                sheetData.imageUrl = currentDbData.imageUrl;
+                console.log(`✅ [CHECK] 기존 이미지 URL 보존:`, currentDbData.imageUrl);
+              }
             }
             
             const existingThread = this.db.getCharacterSheetThread(serverId, userId, characterName);
             if (existingThread) {
               sheetData.sheetThread = existingThread;
-            }
-			 
-			 // 🔥 imageUrl 보존 (시트 동기화 시 덮어씌워지지 않도록)
-            if (activeChar.data.imageUrl) {
-              sheetData.imageUrl = activeChar.data.imageUrl;
-              console.log(`✅ [CHECK] 기존 이미지 URL 보존:`, activeChar.data.imageUrl);
             }
             
             // DB 업데이트
@@ -88,8 +99,7 @@ class CharacterSheetModule {
       }
     }
     
-    // 🆕 forum.js의 createCharacterSheetThread 호출
-    // (이미지 + 댓글 형식으로 통일)
+    // forum.js의 createCharacterSheetThread 호출
     if (this.forumCmd && message.guild) {
       const loadingMsg2 = await message.channel.send('🔄 포럼 게시물 업데이트 중...');
       
@@ -128,16 +138,35 @@ class CharacterSheetModule {
   }
 
   /**
-   * 포럼 시트 자동 업데이트 ⭐ 수정
-   * (이제 forum.js의 createCharacterSheetThread를 사용)
+   * 포럼 시트 자동 업데이트 (경량 버전)
+   * 🔥 첫 번째 청크만 수정 - HP/침식률 변경 시 빠른 업데이트
    */
   async autoUpdateSheet(guild, serverId, userId, characterName) {
     try {
       const characterData = this.db.getCharacter(serverId, userId, characterName);
-      if (!characterData) return;
+      if (!characterData) {
+        console.log(`⚠️ [AUTO] ${characterName} 캐릭터 데이터 없음`);
+        return;
+      }
       
-      // 🆕 forum.js의 createCharacterSheetThread 호출
-      if (this.forumCmd) {
+      // 🔥 경량 업데이트: 첫 번째 청크만 수정
+      if (this.forumCmd && this.forumCmd.updateFirstChunk) {
+        console.log(`⚡ [AUTO] ${characterName} 경량 업데이트 시작...`);
+        await this.forumCmd.updateFirstChunk(
+          guild,
+          serverId,
+          userId,
+          {
+            characterName: characterName,
+            ...characterData,
+            serverId: serverId,
+            userId: userId
+          }
+        );
+        console.log(`✅ [AUTO] ${characterName} 첫 번째 청크 업데이트 완료!`);
+      } else if (this.forumCmd) {
+        // 폴백: 전체 업데이트
+        console.log(`🔄 [AUTO] ${characterName} 전체 업데이트...`);
         await this.forumCmd.createCharacterSheetThread(
           guild,
           serverId,
@@ -149,9 +178,9 @@ class CharacterSheetModule {
             userId: userId
           }
         );
+      } else {
+        console.log(`⚠️ [AUTO] forumCmd가 없어서 포럼 업데이트 불가`);
       }
-      
-      console.log(`✅ [AUTO] ${characterName} 시트 자동 업데이트 완료!`);
     } catch (error) {
       console.error('❌ [AUTO] 오류 발생:', error.message);
     }

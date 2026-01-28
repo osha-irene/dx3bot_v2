@@ -16,9 +16,10 @@ const { calculateErosionD, detectErosionDChange, getErosionDChangeMessage } = re
 const config = require('../config/config');
 
 class CombatCommands {
-  constructor(database, sheetsClient) {
+  constructor(database, sheetsClient, characterCmd = null) {
     this.db = database;
     this.sheets = sheetsClient;
+    this.characterCmd = characterCmd;  // 🔥 포럼 업데이트용
     this.erosionRequesters = {}; // 등장침식 요청자 추적
   }
 
@@ -33,6 +34,9 @@ class CombatCommands {
     const activeCharName = this.db.getActiveCharacter(serverId, userId);
     if (!activeCharName) return null;
 
+    // 🔥 먼저 DB 데이터 가져오기 (실시간 값 보존용)
+    const dbData = this.db.getCharacter(serverId, userId, activeCharName);
+
     // 활성 캐릭터의 시트 정보 확인
     const sheetInfo = this.db.getCharacterSheet(serverId, userId, activeCharName);
     
@@ -42,10 +46,25 @@ class CombatCommands {
         const data = await this.sheets.readFullCharacter(sheetInfo.spreadsheetId, sheetInfo.sheetName);
         
         if (data && data.characterName) {
-          // DB에 저장된 emoji 보존
-          const dbData = this.db.getCharacter(serverId, userId, data.characterName);
-          if (dbData && dbData.emoji) {
-            data.emoji = dbData.emoji;
+          // 🔥 DB에 저장된 실시간 값 보존 (침식률, HP, 침식D는 봇에서 관리)
+          if (dbData) {
+            if (dbData.침식률 !== undefined) {
+              console.log(`🔄 [combat] DB 침식률 보존: ${dbData.침식률} (시트: ${data.침식률})`);
+              data.침식률 = dbData.침식률;
+            }
+            if (dbData.HP !== undefined) {
+              console.log(`🔄 [combat] DB HP 보존: ${dbData.HP} (시트: ${data.HP})`);
+              data.HP = dbData.HP;
+            }
+            if (dbData.침식D !== undefined) {
+              data.침식D = dbData.침식D;
+            }
+            if (dbData.emoji) {
+              data.emoji = dbData.emoji;
+            }
+            if (dbData.imageUrl) {
+              data.imageUrl = dbData.imageUrl;
+            }
           }
           
           // readFullCharacter가 이미 모든 것을 읽었으므로 추가 읽기 불필요
@@ -71,13 +90,12 @@ class CombatCommands {
     }
 
     // 시트 연동이 안 되어 있으면 DB에서 가져오기
-    const data = this.db.getCharacter(serverId, userId, activeCharName);
-    if (!data) return null;
+    if (!dbData) return null;
 
     console.log(`💾 [combat/getActiveCharacterData] ${activeCharName} DB에서 읽기`);
     return {
       name: activeCharName,
-      data,
+      data: dbData,
       fromSheet: false,
       serverId,
       userId,
@@ -356,10 +374,8 @@ class CombatCommands {
       response += `\n📊 시트가 자동으로 업데이트되었습니다!`;
     }
 
-    // 포럼 시트 자동 업데이트 (HP나 중요 스탯 변경 시)
-    if (statName === 'HP' || statName === '침식률') {
-      this.autoUpdateCharacterSheet(message.guild, activeChar.serverId, activeChar.userId, activeChar.name);
-    }
+    // 포럼 시트 자동 업데이트 (모든 스탯 변경 시)
+    await this.autoUpdateCharacterSheet(message.guild, activeChar.serverId, activeChar.userId, activeChar.name);
 
     return message.reply(response);
   }
@@ -373,10 +389,12 @@ class CombatCommands {
     console.log(`   - Character: ${characterName}`);
     
     try {
-      // CharacterCommands 인스턴스 필요
-      const CharacterCommands = require('./character');
-      const charCmd = new CharacterCommands(this.db, this.sheets);
-      await charCmd.autoUpdateSheet(guild, serverId, userId, characterName);
+      // characterCmd가 있으면 사용 (forumCmd 포함)
+      if (this.characterCmd) {
+        await this.characterCmd.autoUpdateSheet(guild, serverId, userId, characterName);
+      } else {
+        console.log('⚠️ [COMBAT] characterCmd가 없어서 포럼 업데이트 불가');
+      }
     } catch (error) {
       console.error('❌ [COMBAT] autoUpdateCharacterSheet 오류:', error.message);
     }
