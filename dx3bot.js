@@ -47,7 +47,8 @@ const slashCommandHandler = new SlashCommandHandler(
   commandHandler.characterCmd,
   commandHandler.sheetCmd,
   commandHandler.combatCmd,
-  commandHandler.loisCmd
+  commandHandler.loisCmd,
+  commandHandler.forumCmd
 );
 
 // 봇 준비 이벤트

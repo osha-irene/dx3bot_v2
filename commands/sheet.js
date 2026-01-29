@@ -146,7 +146,7 @@ class SheetCommands {
       // 🔥 자동으로 활성 캐릭터 지정
       this.db.setActiveCharacter(serverId, userId, characterData.characterName);
 
-      // 🆕 포럼에 캐릭터 시트 게시물 생성
+// 🆕 포럼에 캐릭터 시트 게시물 생성
       let forumThreadInfo = null;
       if (this.forumCmd && message.guild) {
         if (loadingMsg) {
@@ -161,18 +161,30 @@ class SheetCommands {
         );
       }
 
-      let successMsg = formatSuccess(`시트가 등록되었습니다!`) + '\n' +
-        `📊 시트 탭: **${sheetName}**\n` +
-        `📝 캐릭터: **${characterData.characterName}**\n` +
-        `💚 HP: ${characterData.HP} | 🔴 침식률: ${characterData.침식률}\n` +
-        `⚡ 침식D: ${characterData.침식D} | 💙 로이스: ${characterData.로이스}개\n\n` +
-        `✅ **${characterData.characterName}** 캐릭터가 자동으로 활성화되었습니다!\n` +
-        `이제 봇 명령어를 사용하면 자동으로 시트가 업데이트됩니다!`;
+	  const codeName = characterData.codeName ? ` :: 「${characterData.codeName}」` : '';
+      const cover = characterData.cover || '';
+      const works = characterData.works || '';
+      const syndromes = characterData.syndromes || '';
+      const awakening = characterData.awakening || '';
+      const impulse = characterData.impulse || '';
+      const dLois = (characterData.dloisNo || characterData.dloisName) 
+        ? `No.${characterData.dloisNo || '??'} ${characterData.dloisName || ''}` 
+        : '';
+
+      let successMsg = `✅ 시트가 등록되었습니다\n\n`;
+      successMsg += `❌**${characterData.characterName}**${codeName}\n`;
+      if (cover || works) successMsg += `> ${cover}${cover && works ? '｜' : ''}${works}\n`;
+      if (syndromes) successMsg += `> ${syndromes}\n`;
+      if (awakening || impulse) successMsg += `> ${awakening}${awakening && impulse ? '｜' : ''}${impulse}\n`;
+      if (dLois) successMsg += `> D-Lois｜${dLois}\n`;
+      successMsg += `> **HP ${characterData.HP} | 침식률 ${characterData.침식률} | 침식D ${characterData.침식D} | 로이스 ${characterData.로이스}개**\n`;
 
       // 포럼 게시물이 생성되었으면 링크 추가
       if (forumThreadInfo && forumThreadInfo.threadId) {
-        successMsg += `\n\n📋 캐릭터 시트 게시물: <#${forumThreadInfo.threadId}>`;
+        successMsg += `\n시트 게시물: <#${forumThreadInfo.threadId}>`;
       }
+
+      successMsg += `\n\n\`!지정 "${characterData.characterName}"\`을 사용하여 캐릭터를 활성화해주세요.`;
 
       if (loadingMsg) {
         return await loadingMsg.edit(successMsg);
@@ -249,13 +261,10 @@ class SheetCommands {
         );
       }
 
-      let response = formatSuccess('시트에서 데이터를 가져왔습니다!') + '\n';
-      if (sheetInfo.sheetName) {
-        response += `📊 시트 탭: **${sheetInfo.sheetName}**\n`;
-      }
-      response += `📝 캐릭터: **${characterData.characterName}** (${characterData.codeName || '코드네임 없음'})\n`;
-      response += `💚 HP: ${characterData.HP} | 🔴 침식률: ${characterData.침식률} | ⚡ 침식D: ${characterData.침식D}\n`;
-      response += `💙 로이스: ${characterData.로이스}개`;
+      let response = `✅ 시트 동기화 완료\n\n` +
+	  `> ${characterData.characterName}\n` +
+	  `> HP ${characterData.HP} | 침식률 ${characterData.침식률}\n` +
+	  `> 침식D ${characterData.침식D} | 로이스 ${characterData.로이스}개`;
 
       await loadingMsg.edit(response);
     } catch (error) {

@@ -52,8 +52,8 @@ class LoisCommands {
     }
 
     // 강조 처리 (【】 전체를 볼드)
-    const formattedPEmotion = pEmotion.includes('*') ? `**【P: ${pEmotion.replace('*', '')}】**` : `P: ${pEmotion}`;
-    const formattedNEmotion = nEmotion.includes('*') ? `**【N: ${nEmotion.replace('*', '')}】**` : `N: ${nEmotion}`;
+    const formattedPEmotion = pEmotion.includes('*') ? `**【P ${pEmotion.replace('*', '')}】**` : `P ${pEmotion}`;
+	const formattedNEmotion = nEmotion.includes('*') ? `**【N ${nEmotion.replace('*', '')}】**` : `N ${nEmotion}`;
 
     if (!activeChar.data.lois) activeChar.data.lois = [];
 
