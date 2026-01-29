@@ -90,6 +90,102 @@ class CharacterDataModule {
   // async inputSheet() { ... }
 
   /**
+   * 캐릭터 지정
+   */
+  async setActive(message, args, formatError, updateStatusPanel) {
+    const serverId = message.guild.id;
+    const userId = message.author.id;
+    
+    if (args.length === 0) {
+      return message.channel.send(formatError('사용법: `!지정 "캐릭터 이름"`'));
+    }
+
+    const { extractName } = require('../../utils/helpers');
+    const characterName = extractName(args.join(' '));
+
+    // 🔥 먼저 DB에서 캐릭터 데이터 가져오기
+    let characterData = this.db.getCharacter(serverId, userId, characterName);
+    if (!characterData) {
+      return message.channel.send(formatError(`캐릭터 "${characterName}"를 찾을 수 없습니다.`));
+    }
+    
+    // 시트 연동 캐릭터면 자동 동기화 (DB 값 보존)
+    const sheetInfo = this.db.getCharacterSheet(serverId, userId, characterName);
+    if (sheetInfo && this.sheets) {
+      try {
+        console.log(`🔄 [지정] 시트 연동 캐릭터 발견: ${characterName}, 시트 동기화 중...`);
+        const sheetData = await this.sheets.readFullCharacter(sheetInfo.spreadsheetId, sheetInfo.sheetName);
+        
+        if (sheetData && sheetData.characterName) {
+          // 🔥 DB 실시간 값 보존
+          if (characterData.침식률 !== undefined) {
+            sheetData.침식률 = characterData.침식률;
+          }
+          if (characterData.HP !== undefined) {
+            sheetData.HP = characterData.HP;
+          }
+          if (characterData.침식D !== undefined) {
+            sheetData.침식D = characterData.침식D;
+          }
+          if (characterData.emoji) {
+            sheetData.emoji = characterData.emoji;
+          }
+          if (characterData.imageUrl) {
+            sheetData.imageUrl = characterData.imageUrl;
+          }
+          
+          characterData = sheetData;
+          this.db.setCharacter(serverId, userId, characterName, characterData);
+          console.log(`✅ [지정] 시트 동기화 완료 (DB 값 보존)`);
+        }
+      } catch (error) {
+        console.error(`❌ [지정] 시트 동기화 실패:`, error.message);
+      }
+    }
+    
+    this.db.setActiveCharacter(serverId, userId, characterName);
+    
+    const emoji = characterData.emoji || '✅';
+    const codeName = characterData.codeName || '';
+    const sheetIcon = sheetInfo ? ' (시트 연동 ✨)' : '';
+    
+    const replyMsg = await message.reply(
+      `${emoji} **${characterName}** ${codeName ? `「${codeName}」` : ''} 활성화!${sheetIcon}\n` +
+      `💚 HP: ${characterData.HP || 0} | 🔴 침식률: ${characterData.침식률 || 0}`
+    );
+    
+    setTimeout(() => { 
+      replyMsg.delete().catch(() => {}); 
+      message.delete().catch(() => {}); 
+    }, 5000);
+    
+    await updateStatusPanel(message.guild, serverId);
+  }
+
+  /**
+   * 캐릭터 지정 해제
+   */
+  async unsetActive(message, formatError, updateStatusPanel) {
+    const serverId = message.guild.id;
+    const userId = message.author.id;
+    const activeCharName = this.db.getActiveCharacter(serverId, userId);
+    
+    if (!activeCharName) {
+      return message.reply(formatError('활성화된 캐릭터가 없습니다.'));
+    }
+    
+    this.db.clearActiveCharacter(serverId, userId);
+    
+    const replyMsg = await message.reply(`⚪ **${activeCharName}** 활성 해제`);
+    setTimeout(() => { 
+      replyMsg.delete().catch(() => {}); 
+      message.delete().catch(() => {}); 
+    }, 5000);
+    
+    await updateStatusPanel(message.guild, serverId);
+  }
+
+  /**
    * 캐릭터 삭제
    */
   async deleteCharacter(message, args, formatError, formatSuccess, extractName) {

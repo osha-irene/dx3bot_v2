@@ -17,97 +17,120 @@ class CharacterSheetModule {
 
   /**
    * 시트 확인 및 포럼 게시 (실시간 동기화 포함)
-   * 🔥 수정: DB의 실시간 값(침식률, HP, 침식D) 보존
+   * 🔥 수정: 시트 연동된 캐릭터 기준으로 업데이트 (활성 캐릭터 아님!)
    */
   async checkSheet(message, getActiveCharacterData, formatError) {
     console.log(`\n🔍 [CHECK] ===== 시트확인 시작 =====`);
     
-    const activeChar = await getActiveCharacterData(message);
-    if (!activeChar) {
-      return message.reply(formatError('활성화된 캐릭터가 없습니다.'));
-    }
-
     const serverId = message.guild.id;
     const userId = message.author.id;
-    const characterName = activeChar.name;
-    
-    console.log(`🔍 [CHECK] Server: ${serverId}, User: ${userId}, Char: ${characterName}`);
 
-    // 🔥 먼저 현재 DB 데이터 가져오기 (실시간 값 보존용)
-    const currentDbData = this.db.getCharacter(serverId, userId, characterName);
-
-    // Google Sheets 연동 확인 및 실시간 동기화
-    let latestData = activeChar.data;
+    // 🔥 시트 연동 정보 먼저 확인
+    const sheetInfo = this.db.getUserSheet(serverId, userId);
     
-    if (this.sheets) {
-      const sheetInfo = this.db.getUserSheet(serverId, userId);
+    if (!sheetInfo || !this.sheets) {
+      // 시트 연동이 없으면 활성 캐릭터 기준
+      const activeChar = await getActiveCharacterData(message);
+      if (!activeChar) {
+        return message.reply(formatError('활성화된 캐릭터가 없습니다.\n`!시트등록 [URL]`로 시트를 등록하거나\n`!지정 "캐릭터 이름"`으로 캐릭터를 지정하세요.'));
+      }
       
-      if (sheetInfo) {
-        console.log('🔄 [CHECK] Google Sheets에서 최신 데이터 읽는 중...');
+      // 포럼만 업데이트 (시트 동기화 없이)
+      if (this.forumCmd && message.guild) {
+        const characterData = {
+          characterName: activeChar.name,
+          ...activeChar.data,
+          serverId: serverId,
+          userId: userId
+        };
         
-        const loadingMsg = await message.reply('🔄 시트에서 최신 데이터를 가져오는 중...');
+        await this.forumCmd.createCharacterSheetThread(
+          message.guild, serverId, userId, characterData
+        );
         
-        try {
-          const sheetData = await this.sheets.readFullCharacter(
-            sheetInfo.spreadsheetId, 
-            sheetInfo.sheetName
-          );
-          
-          if (sheetData && sheetData.characterName) {
-            // 🔥 DB에 저장된 실시간 값 보존 (침식률, HP, 침식D는 봇에서 관리)
-            if (currentDbData) {
-              if (currentDbData.침식률 !== undefined) {
-                console.log(`🔄 [CHECK] DB 침식률 보존: ${currentDbData.침식률} (시트: ${sheetData.침식률})`);
-                sheetData.침식률 = currentDbData.침식률;
-              }
-              if (currentDbData.HP !== undefined) {
-                console.log(`🔄 [CHECK] DB HP 보존: ${currentDbData.HP} (시트: ${sheetData.HP})`);
-                sheetData.HP = currentDbData.HP;
-              }
-              if (currentDbData.침식D !== undefined) {
-                sheetData.침식D = currentDbData.침식D;
-              }
-              if (currentDbData.emoji) {
-                sheetData.emoji = currentDbData.emoji;
-              }
-              if (currentDbData.imageUrl) {
-                sheetData.imageUrl = currentDbData.imageUrl;
-                console.log(`✅ [CHECK] 기존 이미지 URL 보존:`, currentDbData.imageUrl);
-              }
-            }
-            
-            const existingThread = this.db.getCharacterSheetThread(serverId, userId, characterName);
-            if (existingThread) {
-              sheetData.sheetThread = existingThread;
-            }
-            
-            // DB 업데이트
-            this.db.setCharacter(serverId, userId, characterName, sheetData);
-            latestData = sheetData;
-            
-            console.log('✅ [CHECK] Google Sheets 데이터 동기화 완료');
-            await loadingMsg.delete().catch(() => {});
-          } else {
-            console.log('⚠️ [CHECK] 시트 데이터 읽기 실패, 기존 DB 데이터 사용');
-            await loadingMsg.delete().catch(() => {});
-          }
-        } catch (error) {
-          console.error('❌ [CHECK] 시트 동기화 오류:', error);
-          await loadingMsg.edit('⚠️ 시트 동기화 실패, 봇에 저장된 데이터를 사용합니다.');
-          setTimeout(() => loadingMsg.delete().catch(() => {}), 3000);
-        }
+        const emoji = activeChar.data.emoji || '';
+        const confirmMsg = await message.channel.send(
+          `${emoji} **${activeChar.name}** 시트가 업데이트되었습니다!`
+        );
+        setTimeout(() => confirmMsg.delete().catch(() => {}), 5000);
+      }
+      return;
+    }
+
+    // 🔥 시트에서 캐릭터 이름 읽기 (시트 연동된 캐릭터가 대상!)
+    console.log('🔄 [CHECK] Google Sheets에서 최신 데이터 읽는 중...');
+    const loadingMsg = await message.reply('🔄 시트에서 최신 데이터를 가져오는 중...');
+    
+    let sheetData;
+    let characterName;
+    
+    try {
+      sheetData = await this.sheets.readFullCharacter(
+        sheetInfo.spreadsheetId, 
+        sheetInfo.sheetName
+      );
+      
+      if (!sheetData || !sheetData.characterName) {
+        await loadingMsg.edit('❌ 시트에서 캐릭터 데이터를 읽을 수 없습니다.');
+        setTimeout(() => loadingMsg.delete().catch(() => {}), 3000);
+        return;
+      }
+      
+      characterName = sheetData.characterName;
+      console.log(`🔍 [CHECK] 시트 캐릭터: ${characterName}`);
+      
+    } catch (error) {
+      console.error('❌ [CHECK] 시트 읽기 오류:', error);
+      await loadingMsg.edit('❌ 시트 동기화 실패: ' + error.message);
+      setTimeout(() => loadingMsg.delete().catch(() => {}), 3000);
+      return;
+    }
+
+    // 🔥 해당 캐릭터의 DB 데이터 가져오기 (실시간 값 보존용)
+    const currentDbData = this.db.getCharacter(serverId, userId, characterName);
+    
+    // 🔥 DB에 저장된 실시간 값 보존 (침식률, HP, 침식D는 봇에서 관리)
+    if (currentDbData) {
+      if (currentDbData.침식률 !== undefined) {
+        console.log(`🔄 [CHECK] DB 침식률 보존: ${currentDbData.침식률} (시트: ${sheetData.침식률})`);
+        sheetData.침식률 = currentDbData.침식률;
+      }
+      if (currentDbData.HP !== undefined) {
+        console.log(`🔄 [CHECK] DB HP 보존: ${currentDbData.HP} (시트: ${sheetData.HP})`);
+        sheetData.HP = currentDbData.HP;
+      }
+      if (currentDbData.침식D !== undefined) {
+        sheetData.침식D = currentDbData.침식D;
+      }
+      if (currentDbData.emoji) {
+        sheetData.emoji = currentDbData.emoji;
+      }
+      if (currentDbData.imageUrl) {
+        sheetData.imageUrl = currentDbData.imageUrl;
+        console.log(`✅ [CHECK] 기존 이미지 URL 보존:`, currentDbData.imageUrl);
       }
     }
     
-    // forum.js의 createCharacterSheetThread 호출
+    // 기존 스레드 정보 보존
+    const existingThread = this.db.getCharacterSheetThread(serverId, userId, characterName);
+    if (existingThread) {
+      sheetData.sheetThread = existingThread;
+    }
+    
+    // DB 업데이트
+    this.db.setCharacter(serverId, userId, characterName, sheetData);
+    
+    console.log('✅ [CHECK] Google Sheets 데이터 동기화 완료');
+    await loadingMsg.delete().catch(() => {});
+    
+    // 🔥 포럼 업데이트 (시트 연동된 캐릭터 기준!)
     if (this.forumCmd && message.guild) {
       const loadingMsg2 = await message.channel.send('🔄 포럼 게시물 업데이트 중...');
       
       try {
-        // characterData 형식으로 변환
         const characterData = {
           characterName: characterName,
-          ...latestData,
+          ...sheetData,
           serverId: serverId,
           userId: userId
         };
@@ -119,7 +142,7 @@ class CharacterSheetModule {
           characterData
         );
         
-        const emoji = latestData.emoji || '';
+        const emoji = sheetData.emoji || '';
         await loadingMsg2.delete().catch(() => {});
         
         const confirmMsg = await message.channel.send(

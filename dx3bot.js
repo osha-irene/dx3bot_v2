@@ -46,7 +46,8 @@ const slashCommandHandler = new SlashCommandHandler(
   sheetsClient, 
   commandHandler.characterCmd,
   commandHandler.sheetCmd,
-  commandHandler.combatCmd
+  commandHandler.combatCmd,
+  commandHandler.loisCmd
 );
 
 // 봇 준비 이벤트
